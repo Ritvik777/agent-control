@@ -2,7 +2,7 @@
 name = "agent-protect-models"
 version = "0.1.0"
 description = "Shared data models for Agent Protect server and SDK"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.5.0",
 ]

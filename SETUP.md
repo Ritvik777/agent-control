@@ -34,47 +34,42 @@ You should see something like: `uv 0.x.x`
 
 ## Step 2: Install Project Dependencies
 
-From the project root directory:
+This project uses **separate workspaces** for server and SDKs. Install dependencies in each workspace:
+
+### Install Server Dependencies
 
 ```bash
-cd /path/to/agent-protect
+cd /path/to/agent-protect/server
 uv sync
 ```
 
-This command will:
-1. Create a virtual environment
-2. Install all workspace packages (`models`, `server`, `sdk`)
-3. Install all dependencies
-4. Link the packages together
+This will install the server and its dependencies, including the models package via path reference.
 
-You should see output like:
+### Install SDK Dependencies
 
+```bash
+cd /path/to/agent-protect/sdks
+uv sync
 ```
-Resolved 25 packages in 1.2s
-Downloaded 25 packages in 2.3s
-Installed 25 packages in 0.5s
- + agent-protect-models==0.1.0 (from workspace)
- + agent-protect-sdk==0.1.0 (from workspace)
- + agent-protect-server==0.1.0 (from workspace)
- + fastapi==0.109.0
- + httpx==0.26.0
- + pydantic==2.5.0
- + ...
-```
+
+This will install the SDK and its dependencies, including the models package via path reference.
 
 ## Step 3: Verify Installation
 
 Test that everything is installed correctly:
 
+### Verify Server Installation
+
 ```bash
-# Check if the server command is available
+cd server
 uv run agent-protect-server --help
+```
 
-# Try importing the SDK
+### Verify SDK Installation
+
+```bash
+cd sdks
 uv run python -c "from agent_protect_sdk import AgentProtectClient; print('✓ SDK imported successfully')"
-
-# Try importing the models
-uv run python -c "from agent_protect_models import ProtectionRequest; print('✓ Models imported successfully')"
 ```
 
 ## Step 4: Run the Server
@@ -188,7 +183,7 @@ After setup, your project structure should look like this:
 
 ```
 agent-protect/
-├── pyproject.toml          # Root workspace config
+├── pyproject.toml          # Root configuration
 ├── .gitignore
 ├── README.md               # Main documentation
 ├── QUICKSTART.md           # Quick start guide
@@ -205,8 +200,8 @@ agent-protect/
 │           ├── health.py
 │           └── protection.py
 │
-├── server/                 # FastAPI server
-│   ├── pyproject.toml
+├── server/                 # FastAPI server (separate workspace)
+│   ├── pyproject.toml      # Server workspace config
 │   ├── README.md
 │   └── src/
 │       └── agent_protect_server/
@@ -214,13 +209,16 @@ agent-protect/
 │           ├── main.py
 │           └── config.py
 │
-├── sdk/                    # Python SDK
-│   ├── pyproject.toml
+├── sdks/                   # SDKs (separate workspace)
+│   ├── pyproject.toml      # SDKs workspace config
 │   ├── README.md
-│   └── src/
-│       └── agent_protect_sdk/
-│           ├── __init__.py
-│           └── client.py
+│   └── python/             # Python SDK implementation
+│       ├── pyproject.toml
+│       ├── README.md
+│       └── src/
+│           └── agent_protect_sdk/
+│               ├── __init__.py
+│               └── client.py
 │
 └── examples/               # Usage examples
     ├── basic_usage.py
@@ -230,54 +228,58 @@ agent-protect/
 
 ## Understanding the Architecture
 
-### Three-Package Monorepo
+### Multi-Workspace Structure
 
-This project uses a **monorepo** structure with three packages:
+This project uses a **multi-workspace structure** with separate workspaces:
 
 1. **models** (`agent-protect-models`):
    - Foundation package
    - Contains all Pydantic data models
-   - Used by both server and SDK
+   - Used by both server and SDK via path references
    - Ensures type safety and consistency
 
-2. **server** (`agent-protect-server`):
+2. **server workspace** (`agent-protect-server`):
    - FastAPI application
-   - Depends on `models`
-   - Provides REST API endpoints
-   - Can be deployed independently
+   - Independent workspace at `server/`
+   - References `models` via relative path
+   - Can be developed and deployed independently
 
-3. **sdk** (`agent-protect-sdk`):
-   - Python client library
-   - Depends on `models`
-   - Provides async Python API
-   - Can be published to PyPI
+3. **sdks workspace** (`agent-protect-sdk`):
+   - Python client library workspace at `sdks/`
+   - Contains Python SDK implementation
+   - References `models` via relative path
+   - Can be developed and deployed independently
 
 ### Dependency Flow
 
 ```
 models (foundation)
-  ↓
-  ├─→ server (uses models for API)
-  └─→ sdk (uses models for client)
+  ↓ (path reference)
+  ├─→ server (uses ../models)
+  └─→ sdks/python (uses ../../models)
 ```
 
-### Workspace Dependencies
+### Workspace Configuration
 
-The `pyproject.toml` in the root defines the workspace:
-
-```toml
-[tool.uv.workspace]
-members = ["models", "server", "sdk"]
-```
-
-Each package's `pyproject.toml` references the models package:
-
+**Server workspace** (`server/pyproject.toml`):
 ```toml
 [tool.uv.sources]
-agent-protect-models = { workspace = true }
+agent-protect-models = { path = "../models", editable = true }
 ```
 
-This tells `uv` to use the local workspace version during development, but can be replaced with a PyPI version for deployment.
+**SDK workspace** (`sdks/pyproject.toml`):
+```toml
+[tool.uv.workspace]
+members = ["python"]
+```
+
+**SDK package** (`sdks/python/pyproject.toml`):
+```toml
+[tool.uv.sources]
+agent-protect-models = { path = "../../models", editable = true }
+```
+
+This structure allows independent development while maintaining shared models.
 
 ## Common Issues and Solutions
 
@@ -287,7 +289,7 @@ This tells `uv` to use the local workspace version during development, but can b
 
 ### Issue: `ModuleNotFoundError: No module named 'agent_protect_models'`
 
-**Solution**: Run `uv sync` from the project root to install all workspace packages.
+**Solution**: Run `uv sync` in the workspace directory (server/ or sdks/) to install dependencies including the models path reference.
 
 ### Issue: Server won't start
 
@@ -316,56 +318,57 @@ uv sync --force
 ### Making Changes
 
 1. **Edit files** in the appropriate package
-2. **Test locally**:
+2. **Test locally** (in the workspace directory):
    ```bash
-   uv run pytest
+   # For server
+   cd server && uv run pytest
+   
+   # For SDK
+   cd sdks && uv run pytest
    ```
-3. **Lint and format**:
+3. **Lint and format** (in the workspace directory):
    ```bash
-   uv run ruff check .
-   uv run ruff format .
+   cd server && uv run ruff check .
+   cd sdks && uv run ruff check .
    ```
-4. **Type check**:
+4. **Type check** (in the workspace directory):
    ```bash
-   uv run mypy models/src server/src sdk/src
+   cd server && uv run mypy src
+   cd sdks && uv run mypy python/src
    ```
 
 ### Adding a New Dependency
 
-For a specific package:
+For a specific workspace:
 
 ```bash
-# Add to server
+# Add to server workspace
 cd server
 uv add fastapi-users
 
-# Add to SDK
-cd sdk
-uv add aiofiles
+# Add to SDK workspace
+cd sdks
+uv add --dev pytest-cov
 
 # Add to models
 cd models
 uv add pydantic-extra-types
 ```
 
-For dev dependencies (testing, linting):
-
-```bash
-# From root
-uv add --dev pytest-cov
-```
-
 ### Running Tests
 
 ```bash
-# All tests
-uv run pytest
+# Server tests
+cd server && uv run pytest
+
+# SDK tests
+cd sdks && uv run pytest
 
 # With coverage
-uv run pytest --cov=models --cov=server --cov=sdk
+cd server && uv run pytest --cov=src
 
-# Specific package
-cd server && uv run pytest
+# All workspaces
+cd server && uv run pytest && cd ../sdks && uv run pytest
 ```
 
 ## Next Steps
@@ -378,7 +381,8 @@ Now that you have everything set up:
 4. ✅ Review package-specific READMEs:
    - [models/README.md](models/README.md)
    - [server/README.md](server/README.md)
-   - [sdk/README.md](sdk/README.md)
+   - [sdks/README.md](sdks/README.md)
+   - [sdks/python/README.md](sdks/python/README.md)
 
 ## Getting Help
 

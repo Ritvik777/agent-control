@@ -4,29 +4,33 @@ A modular agent protection system with isolated server and SDK components, built
 
 ## Architecture
 
-This project uses a **monorepo structure** with three independent but related packages:
+This project uses a **multi-workspace structure** with separate workspaces for SDK and server:
 
 ```
 agent-protect/
 ├── models/          # 📦 Shared Pydantic models (foundation)
-├── server/          # 🚀 FastAPI server (API provider)
-└── sdk/             # 🔧 Python SDK (client library)
+├── server/          # 🚀 FastAPI server workspace (API provider)
+│   └── pyproject.toml  # Independent workspace
+└── sdks/            # 🔧 SDKs workspace
+    ├── pyproject.toml  # Independent workspace
+    └── python/         # Python SDK implementation
 ```
+
+### Workspace Benefits
+
+- ✅ **Independent development**: SDK and server teams can work independently
+- ✅ **Separate dependency management**: Each workspace manages its own dependencies
+- ✅ **Isolated testing**: Run tests in each workspace without interference
+- ✅ **Type safety**: Shared models guarantee consistency via path references
 
 ### Package Relationships
 
 ```
 models (v0.1.0)
-    ↓
-    ├── server (v0.1.0) - depends on models
-    └── sdk (v0.1.0)    - depends on models
+    ↓ (path reference)
+    ├── server (v0.1.0) - references ../models
+    └── sdks/python (v0.1.0) - references ../../models
 ```
-
-This design ensures:
-- ✅ **Type safety**: Shared models guarantee consistency
-- ✅ **Independent deployment**: Each package can be deployed separately
-- ✅ **Clear contracts**: API contract is explicitly defined in models
-- ✅ **Maintainability**: Changes to models propagate automatically
 
 ## Common Patterns from Popular Python Packages
 
@@ -51,16 +55,16 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Clone the repository
 git clone https://github.com/yourusername/agent-protect.git
 cd agent-protect
-
-# Install all packages in the workspace
-uv sync
 ```
 
-### Running the Server
+### Working with Workspaces
 
+Each workspace is independent. Navigate to the workspace directory and use `uv` commands:
+
+**For the Server:**
 ```bash
-# Start the server
 cd server
+uv sync  # Install dependencies
 uv run agent-protect-server
 
 # Or with auto-reload for development
@@ -68,6 +72,13 @@ uv run uvicorn agent_protect_server.main:app --reload
 ```
 
 Server will be available at `http://localhost:8000`
+
+**For the SDK:**
+```bash
+cd sdks
+uv sync  # Install dependencies
+uv run pytest  # Run tests
+```
 
 ### Using the SDK
 
@@ -156,7 +167,7 @@ async with AgentProtectClient(base_url="http://localhost:8000") as client:
     result = await client.check_protection("test content")
 ```
 
-[📖 Full documentation](sdk/README.md)
+[📖 Full documentation](sdks/python/README.md)
 
 ## Shared Models Pattern
 
@@ -246,7 +257,7 @@ async def scan_url(self, url: str, deep: bool = False) -> ScanResult:
 
 ```
 agent-protect/
-├── pyproject.toml          # Root workspace configuration
+├── pyproject.toml          # Root configuration (linting, type checking)
 ├── README.md               # This file
 ├── DEPLOYMENT.md           # Deployment guide
 ├── models/
@@ -259,51 +270,65 @@ agent-protect/
 │           ├── health.py   # Health models
 │           └── protection.py # Protection models
 ├── server/
-│   ├── pyproject.toml      # Server package config
+│   ├── pyproject.toml      # Server workspace config
 │   ├── README.md           # Server documentation
 │   └── src/
 │       └── agent_protect_server/
 │           ├── __init__.py
 │           ├── main.py     # FastAPI application
 │           └── config.py   # Configuration
-└── sdk/
-    ├── pyproject.toml      # SDK package config
-    ├── README.md           # SDK documentation
-    └── src/
-        └── agent_protect_sdk/
-            ├── __init__.py
-            └── client.py   # SDK client
+└── sdks/
+    ├── pyproject.toml      # SDKs workspace config
+    ├── README.md           # SDKs documentation
+    └── python/
+        ├── pyproject.toml  # Python SDK package config
+        ├── README.md       # Python SDK documentation
+        └── src/
+            └── agent_protect_sdk/
+                ├── __init__.py
+                └── client.py   # SDK client
 ```
 
 ### Running Tests
 
 ```bash
-# Test all packages
-uv run pytest
-
-# Test specific package
-cd models && uv run pytest
+# Test server workspace
 cd server && uv run pytest
-cd sdk && uv run pytest
+
+# Test SDK workspace
+cd sdks && uv run pytest
+
+# Test models separately (if needed)
+cd models && uv run pytest
 ```
 
 ### Linting and Type Checking
 
-```bash
-# Lint all packages
-uv run ruff check .
+Each workspace has its own linting and type checking:
 
-# Type check
-uv run mypy models/src server/src sdk/src
+```bash
+# Server workspace
+cd server
+uv run ruff check .
+uv run mypy src
+
+# SDK workspace
+cd sdks
+uv run ruff check .
+uv run mypy python/src
 ```
 
 ### Building Packages
 
 ```bash
-# Build all packages
-cd models && uv build
+# Build server
 cd server && uv build
-cd sdk && uv build
+
+# Build SDK
+cd sdks/python && uv build
+
+# Build models
+cd models && uv build
 
 # Wheels will be in each package's dist/ directory
 ```

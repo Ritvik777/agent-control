@@ -7,14 +7,16 @@ This guide covers how to deploy the Agent Protect server and SDK independently.
 ```
 agent-protect/
 ├── models/          # Shared data models (dependency for both)
-├── server/          # FastAPI server application
-└── sdk/             # Python SDK for clients
+├── server/          # FastAPI server application (separate workspace)
+└── sdks/            # SDKs workspace
+    └── python/      # Python SDK implementation
 ```
 
-The project uses a **monorepo structure** with **workspace dependencies**:
+The project uses a **multi-workspace structure** with **path-based dependencies**:
 - `models` is the foundation, containing all shared Pydantic models
-- `server` depends on `models` for API contracts
-- `sdk` depends on `models` for type safety
+- `server` has its own workspace and references `models` via path
+- `sdks` has its own workspace and references `models` via path
+- Each workspace can be developed and deployed independently
 
 ## Prerequisites
 
@@ -32,14 +34,15 @@ The project uses a **monorepo structure** with **workspace dependencies**:
 git clone https://github.com/yourusername/agent-protect.git
 cd agent-protect
 
-# Install all dependencies (workspace-aware)
+# Install server dependencies
+cd server
 uv sync
 
-# This installs:
-# - Root dev dependencies (pytest, ruff, mypy)
-# - models package
-# - server package with dependencies
-# - sdk package with dependencies
+# Install SDK dependencies
+cd ../sdks
+uv sync
+
+# Each workspace manages its own dependencies and references models via path
 ```
 
 ### Running Locally
@@ -327,13 +330,13 @@ sudo systemctl start agent-protect-server
 #### Option 1: Publish to PyPI (Public)
 
 ```bash
-cd sdk
-
 # Ensure models is published first
-cd ../models
+cd models
 uv build
 uv publish
-cd ../sdk
+
+# Now publish the SDK
+cd ../sdks/python
 
 # Update pyproject.toml to use PyPI version
 # Remove [tool.uv.sources] section
@@ -347,7 +350,7 @@ uv publish
 #### Option 2: Publish to Private PyPI
 
 ```bash
-cd sdk
+cd sdks/python
 
 # Build
 uv build
@@ -366,13 +369,13 @@ Users can install directly from your repository:
 
 ```bash
 # Install the SDK (with models as dependency)
-pip install git+https://github.com/yourusername/agent-protect.git#subdirectory=sdk
+pip install git+https://github.com/yourusername/agent-protect.git#subdirectory=sdks/python
 ```
 
 #### Option 4: Distribute Wheels Directly
 
 ```bash
-cd sdk
+cd sdks/python
 uv build
 
 # Distribute dist/agent_protect_sdk-0.1.0-py3-none-any.whl
@@ -462,7 +465,7 @@ git tag server-v0.1.0
 git push origin server-v0.1.0
 
 # 4. Update and publish SDK
-cd ../sdk
+cd ../sdks/python
 # Update pyproject.toml: agent-protect-models>=0.1.0
 uv sync
 uv build
@@ -520,7 +523,7 @@ jobs:
       - uses: astral-sh/setup-uv@v1
       - name: Build and publish SDK
         run: |
-          cd sdk
+          cd sdks/python
           uv build
           uv publish --token ${{ secrets.PYPI_TOKEN }}
 ```

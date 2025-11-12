@@ -2,7 +2,7 @@
 name = "agent-protect-server"
 version = "0.1.0"
 description = "Server for Agent Protect - provide agent protection services via API"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "agent-protect-models",
     "fastapi>=0.109.0",
@@ -16,11 +16,33 @@ authors = [
 readme = "README.md"
 license = {text = "MIT"}
 
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+]
+
+[tool.uv.sources]
+agent-protect-models = { path = "../models", editable = true }
+
 [project.scripts]
 agent-protect-server = "agent_protect_server.main:run"
 
-[tool.uv.sources]
-agent-protect-models = { workspace = true }
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = []
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
 
 [build-system]
 requires = ["hatchling"]
