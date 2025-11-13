@@ -31,3 +31,6 @@ jobs:
 
       - name: Type check
         run: make typecheck
+
+      - name: Test server
+        run: make test-server

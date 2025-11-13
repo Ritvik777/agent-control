@@ -1,6 +1,7 @@
 """Main server application entry point."""
 
 from agent_protect_models import HealthResponse, ProtectionRequest, ProtectionResponse
+from agent_protect_models.server import InitAgentRequest, InitAgentResponse
 from fastapi import FastAPI
 
 app = FastAPI(
@@ -38,6 +39,11 @@ async def protect(request: ProtectionRequest) -> ProtectionResponse:
         confidence=0.95,
         reason="Content appears safe",
     )
+
+
+@app.post("/initAgent", response_model=InitAgentResponse)
+async def init_agent(request: InitAgentRequest) -> InitAgentResponse:
+    raise NotImplementedError()
 
 
 def run() -> None:
