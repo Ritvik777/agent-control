@@ -2,7 +2,7 @@ from .base import BaseModel
 
 
 class Rule(BaseModel):
-    pass
+    rule: dict
 
 class Control(BaseModel):
     rules: list[Rule]

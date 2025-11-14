@@ -32,6 +32,7 @@ from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar, cast
+from uuid import UUID
 
 import httpx
 
@@ -190,7 +191,7 @@ class AgentProtectClient:
         # For now, just return success
         return {
             "status": "registered",
-            "agent_id": agent.agent_id,
+            "agent_id": str(agent.agent_id),
             "message": f"Agent {agent.agent_name} registered successfully"
         }
 
@@ -263,8 +264,11 @@ def init(
     global _current_agent, _protect_engine
 
     # Create agent instance with metadata
+    # Ensure UUID type for models
+    _agent_uuid = UUID(agent_id)
+
     _current_agent = Agent(
-        agent_id=agent_id,
+        agent_id=_agent_uuid,
         agent_name=agent_name,
         agent_description=agent_description,
         agent_created_at=datetime.utcnow().isoformat(),
@@ -291,12 +295,12 @@ def init(
         # Initialize engine with agent info
         _protect_engine = protect_engine_cls(
             rules_file=rules_file,
-            agent_id=agent_id,
+            agent_id=str(_agent_uuid),
             server_url=server_url,
             auto_discover=True
         )
 
-        print(f"✓ Agent initialized: {agent_name} (ID: {agent_id})")
+        print(f"✓ Agent initialized: {agent_name} (ID: {_agent_uuid})")
         print(f"✓ Connected to: {server_url}")
 
     except Exception as e:

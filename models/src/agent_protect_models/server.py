@@ -1,10 +1,14 @@
+from pydantic import Field
+
 from .base import BaseModel
-from .policy import Policy
-from .protection import Agent
+from .policy import Rule
+from .protection import Agent, AgentTool
 
 
 class InitAgentRequest(BaseModel):
     agent: Agent
+    tools: list[AgentTool]
 
 class InitAgentResponse(BaseModel):
-    policyh: Policy
+    created: bool = Field(description="Whether an agent was newly registered or already existed.")
+    rules: list[Rule]

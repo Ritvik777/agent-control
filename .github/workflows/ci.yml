@@ -8,6 +8,27 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: agent_protect
+          POSTGRES_USER: agent_protect
+          POSTGRES_PASSWORD: agent_protect
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd="pg_isready -U agent_protect -d agent_protect" 
+          --health-interval=10s 
+          --health-timeout=5s 
+          --health-retries=5
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_USER: agent_protect
+      DB_PASSWORD: agent_protect
+      DB_DATABASE: agent_protect
 
     steps:
       - name: Checkout

@@ -1,7 +1,7 @@
 """Protection-related models."""
+from typing import Any
 
-
-from pydantic import Field
+from pydantic import UUID4, Field
 
 from .base import BaseModel
 
@@ -19,7 +19,7 @@ class Agent(BaseModel):
         agent_version: Optional version string
         agent_metadata: Optional additional metadata
     """
-    agent_id: str
+    agent_id: UUID4
     agent_name: str
     agent_description: str | None = None
     agent_created_at: str | None = None
@@ -33,10 +33,10 @@ class Agent(BaseModel):
 #       InitProtectResponse *(Policy(multiple Controls) or Errors)*
 #
 #
-# class AgentTool(BaseModel):
-#     tool_name: str
-#     arguments: Optional[List[jsonSchema]] = None  <<-- TBD
-#     output_schema: jsonSchema
+class AgentTool(BaseModel):
+    tool_name: str
+    arguments: dict[str, Any]
+    output_schema: dict[str, Any]
 
 
 class ProtectionRequest(BaseModel):

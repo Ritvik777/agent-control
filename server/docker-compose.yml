@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: agent_protect_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: agent_protect
+      POSTGRES_USER: agent_protect
+      POSTGRES_PASSWORD: agent_protect
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_protect -d agent_protect"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:
