@@ -7,11 +7,15 @@ UP ?= head
 DOWN ?= -1
 SHOW ?= head
 STAMP ?= head
+TEST_DB ?= agent_protect_test
 
-.PHONY: help alembic-migrate alembic-revision alembic-upgrade alembic-downgrade alembic-current alembic-history alembic-heads alembic-show alembic-stamp
+.PHONY: help run start-dependencies test alembic-migrate alembic-revision alembic-upgrade alembic-downgrade alembic-current alembic-history alembic-heads alembic-show alembic-stamp
 
 help:
 	@echo "Available targets:"
+	@echo "  run                          - start FastAPI server (reload)"
+	@echo "  start-dependencies           - docker compose up -d (start local dependencies)"
+	@echo "  test                         - run server tests (uses DB_DATABASE=$(TEST_DB))"
 	@echo "  alembic-migrate MSG='message'  - autogenerate alembic revision"
 	@echo "  alembic-revision MSG='message' - create empty alembic revision"
 	@echo "  alembic-upgrade UP=head        - upgrade to revision"
@@ -48,3 +52,12 @@ alembic-show:
 
 alembic-stamp:
 	$(ALEMBIC) stamp $(STAMP)
+
+start-dependencies:
+	docker compose up -d
+
+test:
+	DB_DATABASE=$(TEST_DB) uv run --package agent-protect-server pytest -q
+
+run: start-dependencies
+	uv run --package agent-protect-server uvicorn agent_protect_server.main:app --reload

@@ -12,3 +12,8 @@ class InitAgentRequest(BaseModel):
 class InitAgentResponse(BaseModel):
     created: bool = Field(description="Whether an agent was newly registered or already existed.")
     rules: list[Rule]
+
+
+class GetAgentResponse(BaseModel):
+    agent: Agent
+    tools: list[AgentTool]

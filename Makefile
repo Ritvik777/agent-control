@@ -1,4 +1,4 @@
-.PHONY: help sync sync-all sync-models sync-server sync-sdk run-server server test test-models test-server test-sdk lint lint-fix typecheck build build-models build-server build-sdk publish publish-models publish-server publish-sdk hooks-install hooks-uninstall prepush
+.PHONY: help sync sync-all sync-models sync-server sync-sdk test test-models test-sdk lint lint-fix typecheck build build-models build-server build-sdk publish publish-models publish-server publish-sdk hooks-install hooks-uninstall prepush
 
 # Workspace package names
 PACK_MODELS := agent-protect-models
@@ -18,13 +18,10 @@ help:
 	@echo "  make sync-all        - uv sync --all-packages at root (single .venv for all)"
 	@echo ""
 	@echo "Run:"
-	@echo "  make run-server      - start FastAPI in reload mode"
+	@echo "  make server-<target> - forward to server targets (e.g., server-help, server-alembic-upgrade)"
 	@echo ""
 	@echo "Test:"
 	@echo "  make test            - run tests for all members"
-	@echo "  make test-models     - run models tests"
-	@echo "  make test-server     - run server tests"
-	@echo "  make test-sdk        - run SDK tests"
 	@echo ""
 	@echo "Quality:"
 	@echo "  make lint            - ruff check for all members"
@@ -64,26 +61,11 @@ sync-sdk:
 # Run
 # ---------------------------
 
-run-server server:
-	uv run --package $(PACK_SERVER) uvicorn agent_protect_server.main:app --reload
-
 # ---------------------------
 # Test
 # ---------------------------
 
-test: test-models test-server test-sdk test-examples
-
-test-models:
-	uv run --package $(PACK_MODELS) pytest -q $(MODELS_DIR); \
-
-test-server:
-	uv run --package $(PACK_SERVER) pytest -q $(SERVER_DIR); \
-
-test-sdk:
-	uv run --package $(PACK_SDK) pytest -q $(SDK_DIR); \
-
-test-examples:
-	uv run --package $(PACK_SDK) pytest -q examples; \
+test: server-test
 
 # ---------------------------
 # Quality
@@ -147,3 +129,7 @@ hooks-uninstall:
 
 prepush:
 	bash $(HOOKS_DIR)/pre-push
+
+.PHONY: server-%
+server-%:
+	$(MAKE) -C $(SERVER_DIR) $(patsubst server-%,%,$@)
