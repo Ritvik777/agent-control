@@ -1,0 +1,29 @@
+[project]
+name = "agent-protect-engine"
+version = "0.1.0"
+description = "Rule execution engine for Agent Protect"
+requires-python = ">=3.12"
+dependencies = [
+    "agent-protect-models>=0.1.0",
+    "google-re2>=1.1",
+]
+authors = [
+    {name = "Agent Protect Team"}
+]
+readme = "README.md"
+license = {text = "Apache-2.0"}
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_protect_engine"]

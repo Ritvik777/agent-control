@@ -5,6 +5,7 @@ from pydantic import Field
 from .base import BaseModel
 from .policy import Rule
 from .protection import Agent, AgentTool
+from .rules import ProtectionRule
 
 
 class CreatePolicyRequest(BaseModel):
@@ -111,17 +112,14 @@ class AssocResponse(BaseModel):
 
 
 class GetRuleDataResponse(BaseModel):
-    data: dict[str, Any] = Field(description="Rule data payload")
+    data: ProtectionRule | dict[str, Any] = Field(description="Rule data payload")
 
 
 class SetRuleDataRequest(BaseModel):
     """Request to update rule configuration data."""
-    data: dict[str, Any] = Field(
+    data: ProtectionRule = Field(
         ...,
         description="Rule configuration data (replaces existing)",
-        examples=[
-            {"type": "content-filter", "pattern": "ssn|credit_card", "action": "block"}
-        ],
     )
 
 

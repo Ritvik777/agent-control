@@ -1,9 +1,10 @@
 """Protection-related models."""
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import UUID4, Field
 
 from .base import BaseModel
+from .rules import RuleMatch
 
 
 class Agent(BaseModel):
@@ -79,31 +80,52 @@ class AgentTool(BaseModel):
         }
     }
 
+
+class AgentContext(BaseModel):
+    """Base class for agent interaction context."""
+    context: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional context (conversation history, metadata, etc.)"
+    )
+
+class ToolCall(AgentContext):
+    """Represents a tool invocation by the agent."""
+    tool_name: str = Field(..., description="Name of the tool called")
+    arguments: dict[str, Any] = Field(..., description="Arguments passed to the tool")
+    output: str | dict[str, Any] | None = Field(
+        None, description="Output of the tool (None for pre-checks)"
+    )
+
+
+class LlmCall(AgentContext):
+    """Represents an LLM interaction by the agent."""
+    input: str | dict[str, Any] = Field(
+        ..., description="Input content to analyze for safety (text or structured data)"
+    )
+    output: str | dict[str, Any] | None = Field(
+        None, description="Output content to analyze for safety (None for pre-checks)"
+    )
+
 class ProtectionRequest(BaseModel):
     """
     Request model for protection analysis.
 
-    Used to analyze agent inputs and outputs for safety violations,
+    Used to analyze agent interactions for safety violations,
     policy compliance, and protection rules.
 
     Attributes:
         agent_uuid: UUID of the agent making the request
-        input: Input content to analyze (string or structured data)
-        output: Output content to analyze (string or structured data)
-        context: Optional contextual metadata about the request
+        payload: Either a ToolCall or LlmCall
+        check_stage: 'pre' (before execution) or 'post' (after execution)
     """
     agent_uuid: UUID4 = Field(
         ..., description="UUID of the agent making the protection request"
     )
-    input: str | dict[str, Any] = Field(
-        ..., description="Input content to analyze for safety (text or structured data)"
+    payload: ToolCall | LlmCall = Field(
+        ..., description="Agent interaction payload - either a tool call or LLM call"
     )
-    output: str | dict[str, Any] = Field(
-        ..., description="Output content to analyze for safety (text or structured data)"
-    )
-    context: dict[str, str] | None = Field(
-        default=None,
-        description="Optional contextual metadata (e.g., user_id, session_id, tool_name)",
+    check_stage: Literal["pre", "post"] = Field(
+        ..., description="Check stage: 'pre' or 'post'"
     )
 
     model_config = {
@@ -111,9 +133,39 @@ class ProtectionRequest(BaseModel):
             "examples": [
                 {
                     "agent_uuid": "550e8400-e29b-41d4-a716-446655440000",
-                    "input": "What is the customer's credit card number?",
-                    "output": "I cannot share sensitive payment information.",
-                    "context": {"tool_name": "chat", "user_id": "user123"}
+                    "payload": {
+                        "input": "What is the customer's credit card number?",
+                        "context": {"user_id": "user123", "session_id": "abc123"}
+                    },
+                    "check_stage": "pre"
+                },
+                {
+                    "agent_uuid": "550e8400-e29b-41d4-a716-446655440000",
+                    "payload": {
+                        "input": "What is the customer's credit card number?",
+                        "output": "I cannot share sensitive payment information.",
+                        "context": {"user_id": "user123", "session_id": "abc123"}
+                    },
+                    "check_stage": "post"
+                },
+                {
+                    "agent_uuid": "550e8400-e29b-41d4-a716-446655440000",
+                    "payload": {
+                        "tool_name": "search_database",
+                        "arguments": {"query": "SELECT * FROM users"},
+                        "context": {"user_id": "user123"}
+                    },
+                    "check_stage": "pre"
+                },
+                {
+                    "agent_uuid": "550e8400-e29b-41d4-a716-446655440000",
+                    "payload": {
+                        "tool_name": "search_database",
+                        "arguments": {"query": "SELECT * FROM users"},
+                        "output": {"results": []},
+                        "context": {"user_id": "user123"}
+                    },
+                    "check_stage": "post"
                 }
             ]
         }
@@ -131,6 +183,7 @@ class ProtectionResponse(BaseModel):
         is_safe: Whether the content is considered safe
         confidence: Confidence score between 0.0 and 1.0
         reason: Optional explanation for the decision
+        matches: List of rule matches detected (if any)
     """
 
     is_safe: bool = Field(..., description="Whether content is safe")
@@ -143,6 +196,10 @@ class ProtectionResponse(BaseModel):
     reason: str | None = Field(
         default=None,
         description="Explanation for the decision",
+    )
+    matches: list[RuleMatch] | None = Field(
+        default=None,
+        description="List of rule matches detected (if any)",
     )
 
 

@@ -13,7 +13,14 @@ engine = create_engine(db_config.get_url(), echo=False)
 
 
 @pytest.fixture(scope="session")
+def db_engine():
+    """Provide the sqlalchemy engine for tests."""
+    return engine
+
+
+@pytest.fixture(scope="session")
 def app():
+    """Provide the FastAPI app."""
     return fastapi_app
 
 

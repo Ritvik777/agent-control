@@ -143,7 +143,7 @@ async def set_rule_data(
         raise HTTPException(
             status_code=404, detail=f"Rule with ID '{rule_id}' not found"
         )
-    rule.data = request.data
+    rule.data = request.data.model_dump(mode="json")
     try:
         await db.commit()
     except Exception:

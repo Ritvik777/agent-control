@@ -319,7 +319,8 @@ def test_list_agent_rules_with_policy(client: TestClient) -> None:
     rule_id = rl.json()["rule_id"]
 
     # Set rule data
-    data_payload = {"level": 7, "tags": ["a", "b"]}
+    from .utils import VALID_RULE_PAYLOAD
+    data_payload = VALID_RULE_PAYLOAD
     client.put(f"/api/v1/rules/{rule_id}/data", json={"data": data_payload})
 
     # Associate rule -> control and control -> policy; assign policy to agent
@@ -333,7 +334,11 @@ def test_list_agent_rules_with_policy(client: TestClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert isinstance(body.get("rules"), list)
-    assert any(item.get("rule") == data_payload for item in body["rules"])
+    # Verify rule data is present and matches description
+    assert any(
+        item.get("rule", {}).get("description") == data_payload["description"] 
+        for item in body["rules"]
+    )
 
 
 def test_list_agent_rules_agent_not_found_404(client: TestClient) -> None:

@@ -32,14 +32,28 @@ def test_get_rule_data_initially_empty(client: TestClient) -> None:
     assert resp.json()["data"] == {}
 
 
+VALID_RULE_DATA = {
+    "description": "Test Rule",
+    "enabled": True,
+    "applies_to": "llm_call",
+    "check_stage": "pre",
+    "selector": {"path": "input"},
+    "evaluator": {
+        "type": "regex",
+        "config": {"pattern": "test", "flags": []}
+    },
+    "action": {"decision": "deny"},
+    "tags": ["test"]
+}
+
 def test_set_rule_data_replaces_existing(client: TestClient) -> None:
     # Given: a rule with empty data
     rule_id = create_rule(client)
     # When: setting data
-    payload: dict[str, Any] = {"threshold": 0.9, "actions": ["block", "log"]}
+    payload = VALID_RULE_DATA
     resp_put = client.put(f"/api/v1/rules/{rule_id}/data", json={"data": payload})
     # Then: update succeeds
-    assert resp_put.status_code == 200
+    assert resp_put.status_code == 200, resp_put.text
     assert resp_put.json()["success"] is True
 
     # When: reading back
@@ -49,46 +63,25 @@ def test_set_rule_data_replaces_existing(client: TestClient) -> None:
     assert resp_get.json()["data"] == payload
 
 
-def test_set_rule_data_with_empty_dict_clears_data(client: TestClient) -> None:
+def test_set_rule_data_with_empty_dict_fails(client: TestClient) -> None:
     # Given: a rule with non-empty data
     rule_id = create_rule(client)
-    client.put(f"/api/v1/rules/{rule_id}/data", json={"data": {"x": 1}})
-
     # When: setting empty dict
+    # Then: Fails 422 because strict schema is enforced
     resp_put = client.put(f"/api/v1/rules/{rule_id}/data", json={"data": {}})
-    # Then: success and data becomes empty
-    assert resp_put.status_code == 200
-    assert resp_put.json()["success"] is True
-
-    resp_get = client.get(f"/api/v1/rules/{rule_id}/data")
-    assert resp_get.status_code == 200
-    assert resp_get.json()["data"] == {}
+    assert resp_put.status_code == 422
 
 
-def test_set_rule_data_accepts_nested_json(client: TestClient) -> None:
+def test_set_rule_data_validates_nested_schema(client: TestClient) -> None:
     # Given: a rule
     rule_id = create_rule(client)
-    nested: dict[str, Any] = {
-        "conditions": {
-            "includes": ["pii", "secrets"],
-            "severity": {"min": 2, "max": 5},
-        },
-        "metadata": {"owner": "sec", "enabled": True},
-    }
-    # When: setting nested data
-    r = client.put(f"/api/v1/rules/{rule_id}/data", json={"data": nested})
-    # Then: success
-    assert r.status_code == 200
-    assert r.json()["success"] is True
-
-    # When: reading back
-    g = client.get(f"/api/v1/rules/{rule_id}/data")
-    # Then: nested content is preserved
-    assert g.status_code == 200
-    assert g.json()["data"] == nested
-
-
-def test_get_rule_data_not_found(client: TestClient) -> None:
+    
+    # When: setting invalid data (missing required fields)
+    invalid_data = {"conditions": "test"} 
+    r = client.put(f"/api/v1/rules/{rule_id}/data", json={"data": invalid_data})
+    
+    # Then: 422 Validation Error
+    assert r.status_code == 422
     # Given: a non-existent rule id
     missing = "99999999"
     # When: fetching data
@@ -101,7 +94,7 @@ def test_set_rule_data_not_found(client: TestClient) -> None:
     # Given: a non-existent rule id
     missing = "99999999"
     # When: setting data
-    r = client.put(f"/api/v1/rules/{missing}/data", json={"data": {"a": 1}})
+    r = client.put(f"/api/v1/rules/{missing}/data", json={"data": VALID_RULE_DATA})
     # Then: 404
     assert r.status_code == 404
 

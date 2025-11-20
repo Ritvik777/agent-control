@@ -1,9 +1,24 @@
 """Protection analysis endpoints."""
+from typing import Any
 
-from agent_protect_models import ProtectionRequest, ProtectionResponse
-from fastapi import APIRouter
+from agent_protect_engine.core import ProtectionEngine
+from agent_protect_models import ProtectionRequest, ProtectionResponse, ProtectionRule
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..db import get_async_db
+from ..services.rules import list_rules_for_agent
 
 router = APIRouter(prefix="/protect", tags=["protection"])
+
+
+class RuleAdapter:
+    """Adapts API Rule to Engine RuleWithIdentity protocol."""
+    def __init__(self, id: int, name: str, rule_data: dict[str, Any]):
+        self.id = id
+        self.name = name
+        # Convert dict to Pydantic model
+        self.rule = ProtectionRule.model_validate(rule_data)
 
 
 @router.post(
@@ -12,22 +27,27 @@ router = APIRouter(prefix="/protect", tags=["protection"])
     summary="Analyze content safety",
     response_description="Safety analysis result",
 )
-async def protect(request: ProtectionRequest) -> ProtectionResponse:
+async def protect(
+    request: ProtectionRequest,
+    db: AsyncSession = Depends(get_async_db)
+) -> ProtectionResponse:
     """
     Analyze content for safety and protection violations.
-
-    **Note**: This endpoint currently returns a placeholder response.
-    Actual protection logic should be implemented based on your requirements.
-
-    Args:
-        request: Content to analyze with optional context
-
-    Returns:
-        ProtectionResponse with safety status, confidence score, and reason
     """
-    # TODO: Implement actual protection logic
-    return ProtectionResponse(
-        is_safe=True,
-        confidence=0.95,
-        reason="Content appears safe (placeholder implementation)",
-    )
+    # 1. Fetch rules for the agent
+    api_rules = await list_rules_for_agent(request.agent_uuid, db)
+
+    # 2. Adapt rules for the engine
+    engine_rules = []
+    for r in api_rules:
+        try:
+            engine_rules.append(RuleAdapter(r.id, r.name, r.rule))
+        except Exception:
+            # TODO: Log invalid rule error
+            continue
+
+    # 3. Execute Protection Engine
+    engine = ProtectionEngine(engine_rules)
+    response = engine.process(request)
+
+    return response

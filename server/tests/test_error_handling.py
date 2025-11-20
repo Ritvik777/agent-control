@@ -58,7 +58,7 @@ def test_init_agent_rollback_on_create_failure(
 
 
 def test_init_agent_rollback_on_update_failure(
-    app: FastAPI, client: TestClient
+    app: FastAPI, client: TestClient, db_engine: object
 ) -> None:
     """Test that init_agent rolls back transaction when commit fails on update."""
     # Given: an existing agent
@@ -97,10 +97,9 @@ def test_init_agent_rollback_on_update_failure(
     }
 
     from agent_protect_server.models import Agent
-    from conftest import engine
     from sqlalchemy.orm import Session
 
-    with Session(engine) as session:
+    with Session(db_engine) as session:
         existing_agent = (
             session.query(Agent).filter(Agent.name == agent_name).first()
         )
@@ -187,7 +186,7 @@ def test_create_rule_rollback_on_failure(
 
 
 def test_set_agent_policy_rollback_on_failure(
-    app: FastAPI, client: TestClient
+    app: FastAPI, client: TestClient, db_engine: object
 ) -> None:
     """Test that set_agent_policy rolls back transaction when commit fails."""
     # Given: an existing agent and policy
@@ -212,10 +211,9 @@ def test_set_agent_policy_rollback_on_failure(
 
     # When: commit fails during policy assignment
     from agent_protect_server.models import Agent, Policy
-    from conftest import engine
     from sqlalchemy.orm import Session
 
-    with Session(engine) as session:
+    with Session(db_engine) as session:
         existing_agent = (
             session.query(Agent)
             .filter(Agent.agent_uuid == agent_id)
@@ -266,7 +264,7 @@ def test_set_agent_policy_rollback_on_failure(
 
 
 def test_add_control_to_policy_rollback_on_failure(
-    app: FastAPI, client: TestClient
+    app: FastAPI, client: TestClient, db_engine: object
 ) -> None:
     """Test that add_control_to_policy rolls back transaction when commit fails."""
     # Given: an existing policy and control
@@ -282,10 +280,9 @@ def test_add_control_to_policy_rollback_on_failure(
 
     # When: commit fails during association
     from agent_protect_server.models import Control, Policy
-    from conftest import engine
     from sqlalchemy.orm import Session
 
-    with Session(engine) as session:
+    with Session(db_engine) as session:
         existing_policy = (
             session.query(Policy)
             .filter(Policy.id == int(policy_id))
@@ -344,7 +341,7 @@ def test_add_control_to_policy_rollback_on_failure(
 
 
 def test_set_rule_data_rollback_on_failure(
-    app: FastAPI, client: TestClient
+    app: FastAPI, client: TestClient, db_engine: object
 ) -> None:
     """Test that set_rule_data rolls back transaction when commit fails."""
     # Given: an existing rule
@@ -355,10 +352,9 @@ def test_set_rule_data_rollback_on_failure(
 
     # When: commit fails during data update
     from agent_protect_server.models import Rule
-    from conftest import engine
     from sqlalchemy.orm import Session
 
-    with Session(engine) as session:
+    with Session(db_engine) as session:
         existing_rule = (
             session.query(Rule).filter(Rule.id == int(rule_id)).first()
         )
@@ -378,8 +374,17 @@ def test_set_rule_data_rollback_on_failure(
 
         app.dependency_overrides[get_async_db] = mock_db_returns_rule
         try:
+            valid_payload = {
+                "description": "Valid Rule",
+                "enabled": True,
+                "applies_to": "llm_call",
+                "check_stage": "pre",
+                "selector": {"path": "input"},
+                "evaluator": {"type": "regex", "config": {"pattern": "x"}},
+                "action": {"decision": "deny"}
+            }
             resp = client.put(
-                f"/api/v1/rules/{rule_id}/data", json={"data": {"test": "value"}}
+                f"/api/v1/rules/{rule_id}/data", json={"data": valid_payload}
             )
 
             # Then: rollback is called and 500 error is returned

@@ -4,11 +4,13 @@
 PACK_MODELS := agent-protect-models
 PACK_SERVER := agent-protect-server
 PACK_SDK    := agent-protect
+PACK_ENGINE := agent-protect-engine
 
 # Directories
 MODELS_DIR := models
 SERVER_DIR := server
 SDK_DIR    := sdks/python
+ENGINE_DIR := engine
 
 help:
 	@echo "Agent Protect - Makefile commands"
@@ -44,7 +46,7 @@ help:
 # Setup
 # ---------------------------
 
-sync: sync-models sync-server sync-sdk
+sync: sync-models sync-server sync-sdk engine-sync
 
 sync-all:
 	uv sync --all-packages
@@ -66,7 +68,7 @@ sync-sdk:
 # Test
 # ---------------------------
 
-test: server-test
+test: server-test engine-test
 
 # Run tests, lint, and typecheck
 check: test lint typecheck
@@ -75,17 +77,17 @@ check: test lint typecheck
 # Quality
 # ---------------------------
 
-lint:
+lint: engine-lint
 	uv run --package $(PACK_MODELS) ruff check --config pyproject.toml models/src
 	uv run --package $(PACK_SERVER) ruff check --config pyproject.toml server/src
 	uv run --package $(PACK_SDK) ruff check --config pyproject.toml sdks/python/src
 
-lint-fix:
+lint-fix: engine-lint-fix
 	uv run --package $(PACK_MODELS) ruff check --config pyproject.toml --fix models/src
 	uv run --package $(PACK_SERVER) ruff check --config pyproject.toml --fix server/src
 	uv run --package $(PACK_SDK) ruff check --config pyproject.toml --fix sdks/python/src
 
-typecheck:
+typecheck: engine-typecheck
 	uv run --package $(PACK_MODELS) mypy --config-file pyproject.toml models/src
 	uv run --package $(PACK_SERVER) mypy --config-file pyproject.toml server/src
 	uv run --package $(PACK_SDK) mypy --config-file pyproject.toml sdks/python/src
@@ -94,7 +96,7 @@ typecheck:
 # Build / Publish
 # ---------------------------
 
-build: build-models build-server build-sdk
+build: build-models build-server build-sdk engine-build
 
 build-models:
 	cd $(MODELS_DIR) && uv build
@@ -105,7 +107,7 @@ build-server:
 build-sdk:
 	cd $(SDK_DIR) && uv build
 
-publish: publish-models publish-server publish-sdk
+publish: publish-models publish-server publish-sdk engine-publish
 
 publish-models:
 	cd $(MODELS_DIR) && uv publish
@@ -133,6 +135,9 @@ hooks-uninstall:
 
 prepush:
 	bash $(HOOKS_DIR)/pre-push
+
+engine-%:
+	$(MAKE) -C $(ENGINE_DIR) $(patsubst engine-%,%,$@)
 
 .PHONY: server-%
 server-%:

@@ -8,10 +8,11 @@
 # To work with each component, navigate to its directory and use uv commands there.
 
 [tool.uv.workspace]
-members = ["models", "server", "sdks/python"]
+members = ["models", "server", "sdks/python", "engine"]
 
 [tool.uv.sources]
 agent-protect-models = { workspace = true }
+agent-protect-engine = { workspace = true }
 
 [tool.ruff]
 line-length = 100
@@ -26,4 +27,8 @@ python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "re2"
+ignore_missing_imports = true
 

@@ -31,7 +31,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 from uuid import UUID
 
 import httpx
@@ -40,8 +40,10 @@ import httpx
 try:
     from agent_protect_models import (
         Agent,
+        LlmCall,
         ProtectionRequest,
         ProtectionResult,
+        ToolCall,
     )
     MODELS_AVAILABLE = True
 except ImportError:
@@ -54,10 +56,40 @@ except ImportError:
                 for k, v in kwargs.items():
                     setattr(self, k, v)
 
-        class ProtectionRequest:  # runtime fallback
-            def __init__(self, content: str, context: dict | None = None):
-                self.content = content
+        class ToolCall:  # runtime fallback
+            def __init__(
+                self,
+                tool_name: str,
+                arguments: dict[str, Any],
+                output: str | dict[str, Any] | None = None,
+                context: dict[str, Any] | None = None,
+            ):
+                self.tool_name = tool_name
+                self.arguments = arguments
+                self.output = output
                 self.context = context
+
+        class LlmCall:  # runtime fallback
+            def __init__(
+                self,
+                input: str | dict[str, Any],
+                output: str | dict[str, Any] | None = None,
+                context: dict[str, Any] | None = None,
+            ):
+                self.input = input
+                self.output = output
+                self.context = context
+
+        class ProtectionRequest:  # runtime fallback
+            def __init__(
+                self,
+                agent_uuid: UUID,
+                payload: ToolCall | LlmCall,
+                check_stage: str,
+            ):
+                self.agent_uuid = agent_uuid
+                self.payload = payload
+                self.check_stage = check_stage
 
         class ProtectionResult:  # runtime fallback
             def __init__(self, is_safe: bool, confidence: float, reason: str | None = None):
@@ -136,40 +168,69 @@ class AgentProtectClient:
     async def check_protection(
         self,
         agent_uuid: UUID,
-        input: str | dict[str, Any],
-        output: str | dict[str, Any],
-        context: dict[str, str] | None = None
+        payload: "ToolCall | LlmCall",
+        check_stage: Literal["pre", "post"],
     ) -> ProtectionResult:
         """
-        Check if content is safe.
+        Check if agent interaction is safe.
 
         Args:
             agent_uuid: UUID of the agent making the request
-            input: Input content to analyze
-            output: Output content to analyze
-            context: Optional context information
+            payload: Either a ToolCall or LlmCall instance
+            check_stage: 'pre' for pre-execution check, 'post' for post-execution check
 
         Returns:
             ProtectionResult with safety analysis
 
         Raises:
             httpx.HTTPError: If request fails
+
+        Example:
+            # Pre-check before LLM call
+            result = await client.check_protection(
+                agent_uuid=agent.agent_id,
+                payload=LlmCall(input="User question", output=None),
+                check_stage="pre"
+            )
+
+            # Post-check after tool execution
+            result = await client.check_protection(
+                agent_uuid=agent.agent_id,
+                payload=ToolCall(
+                    tool_name="search",
+                    arguments={"query": "test"},
+                    output={"results": []}
+                ),
+                check_stage="post"
+            )
         """
         if MODELS_AVAILABLE:
             request = ProtectionRequest(
-                agent_uuid=agent_uuid, input=input, output=output, context=context
+                agent_uuid=agent_uuid,
+                payload=payload,
+                check_stage=check_stage
             )
-            payload = request.to_dict()
+            request_payload = request.to_dict()
         else:
-            payload = {
+            # Fallback for when models aren't available
+            payload_dict = {
+                "tool_name": getattr(payload, "tool_name", None),
+                "arguments": getattr(payload, "arguments", None),
+                "input": getattr(payload, "input", None),
+                "output": getattr(payload, "output", None),
+                "context": getattr(payload, "context", None),
+            }
+            # Remove None values
+            payload_dict = {k: v for k, v in payload_dict.items() if v is not None}
+
+            request_payload = {
                 "agent_uuid": str(agent_uuid),
-                "input": input,
-                "output": output,
-                "context": context,
+                "payload": payload_dict,
+                "check_stage": check_stage,
             }
 
         assert self._client is not None
-        response = await self._client.post("/api/v1/protect", json=payload)
+        response = await self._client.post("/api/v1/protect", json=request_payload)
         response.raise_for_status()
 
         if MODELS_AVAILABLE:
@@ -523,6 +584,8 @@ __all__ = [
 
     # Models (if available)
     "Agent",
+    "LlmCall",
+    "ToolCall",
     "ProtectionRequest",
     "ProtectionResult",
     "ProtectionResponse",

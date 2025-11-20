@@ -40,6 +40,8 @@ def _create_control(client: TestClient, name: str | None = None) -> int:
     return resp.json()["control_id"]
 
 
+from .utils import VALID_RULE_PAYLOAD
+
 def _create_rule(client: TestClient, name: str | None = None, data: dict | None = None) -> int:
     """Helper: Create a rule and return rule_id."""
     rule_name = name or f"rule-{uuid.uuid4()}"
@@ -47,9 +49,12 @@ def _create_rule(client: TestClient, name: str | None = None, data: dict | None 
     assert resp.status_code == 200
     rule_id = resp.json()["rule_id"]
     
-    if data:
-        resp = client.put(f"/api/v1/rules/{rule_id}/data", json={"data": data})
-        assert resp.status_code == 200
+    # Always set valid data, using name/data in description for traceability
+    payload = VALID_RULE_PAYLOAD.copy()
+    payload["description"] = f"Name: {rule_name}, Data: {data}"
+    
+    resp = client.put(f"/api/v1/rules/{rule_id}/data", json={"data": payload})
+    assert resp.status_code == 200
     
     return rule_id
 
@@ -89,11 +94,13 @@ def test_agent_gets_rules_from_multiple_controls(client: TestClient) -> None:
     # Then: Agent sees all 6 rules (3 controls × 2 rules)
     assert len(rules) == 6
     
-    # Verify all rule data is present
-    received_rules = [r["rule"] for r in rules]
+    # Verify all rule IDs are present
+    received_ids = {r["id"] for r in rules}
+    expected_ids = set()
     for control_rules in rule_data_by_control.values():
-        for _, rule_data in control_rules:
-            assert rule_data in received_rules
+        for rid, _ in control_rules:
+            expected_ids.add(rid)
+    assert received_ids == expected_ids
 
 
 def test_agent_gets_no_duplicate_rules_from_shared_rule(client: TestClient) -> None:
@@ -137,11 +144,11 @@ def test_agent_gets_no_duplicate_rules_from_shared_rule(client: TestClient) -> N
     # Then: Agent sees 3 unique rules (not 4)
     assert len(rules) == 3
     
-    # Verify no duplicates of shared rule
-    received_rules = [r["rule"] for r in rules]
-    assert received_rules.count(shared_rule_data) == 1
-    assert unique_rule_1_data in received_rules
-    assert unique_rule_2_data in received_rules
+    # Verify IDs
+    received_ids = {r["id"] for r in rules}
+    assert shared_rule_id in received_ids
+    assert unique_rule_1_id in received_ids
+    assert unique_rule_2_id in received_ids
 
 
 def test_agent_rules_update_when_control_added_to_policy(client: TestClient) -> None:
@@ -179,8 +186,8 @@ def test_agent_rules_update_when_control_added_to_policy(client: TestClient) -> 
     rules = resp.json()["rules"]
     assert len(rules) == 5
     
-    rule_ids = {r["rule"]["id"] for r in rules}
-    assert rule_ids == {1, 2, 3, 4, 5}
+    rule_ids = {r["id"] for r in rules}
+    assert rule_ids == {rule_1_id, rule_2_id, rule_3_id, rule_4_id, rule_5_id}
 
 
 def test_agent_rules_update_when_rule_added_to_control(client: TestClient) -> None:
@@ -212,8 +219,8 @@ def test_agent_rules_update_when_rule_added_to_control(client: TestClient) -> No
     rules = resp.json()["rules"]
     assert len(rules) == 3
     
-    rule_ids = {r["rule"]["id"] for r in rules}
-    assert rule_ids == {1, 2, 3}
+    rule_ids = {r["id"] for r in rules}
+    assert rule_ids == {rule_1_id, rule_2_id, rule_3_id}
 
 
 def test_switching_agent_policy_changes_rules(client: TestClient) -> None:
@@ -244,7 +251,7 @@ def test_switching_agent_policy_changes_rules(client: TestClient) -> None:
     resp = client.get(f"/api/v1/agents/{agent_id}/rules")
     rules_a = resp.json()["rules"]
     assert len(rules_a) == 2
-    assert all(r["rule"]["policy"] == "A" for r in rules_a)
+    assert {r["id"] for r in rules_a} == {rule_1_id, rule_2_id}
     
     # When: Switch to policy B
     resp = client.post(f"/api/v1/agents/{agent_id}/policy/{policy_b_id}")
@@ -254,8 +261,7 @@ def test_switching_agent_policy_changes_rules(client: TestClient) -> None:
     resp = client.get(f"/api/v1/agents/{agent_id}/rules")
     rules_b = resp.json()["rules"]
     assert len(rules_b) == 2
-    assert all(r["rule"]["policy"] == "B" for r in rules_b)
-    assert {r["rule"]["id"] for r in rules_b} == {3, 4}
+    assert {r["id"] for r in rules_b} == {rule_3_id, rule_4_id}
 
 
 def test_removing_agent_policy_clears_rules(client: TestClient) -> None:
@@ -323,8 +329,7 @@ def test_removing_control_from_policy_removes_its_rules_from_agent(
     resp = client.get(f"/api/v1/agents/{agent_id}/rules")
     rules = resp.json()["rules"]
     assert len(rules) == 2
-    assert all(r["rule"]["control"] == "B" for r in rules)
-    assert {r["rule"]["id"] for r in rules} == {3, 4}
+    assert {r["id"] for r in rules} == {rule_3_id, rule_4_id}
 
 
 def test_removing_rule_from_control_removes_from_agent(client: TestClient) -> None:
@@ -356,7 +361,7 @@ def test_removing_rule_from_control_removes_from_agent(client: TestClient) -> No
     resp = client.get(f"/api/v1/agents/{agent_id}/rules")
     rules = resp.json()["rules"]
     assert len(rules) == 2
-    assert {r["rule"]["id"] for r in rules} == {1, 3}
+    assert {r["id"] for r in rules} == {rule_1_id, rule_3_id}
 
 
 def test_multiple_agents_same_policy(client: TestClient) -> None:
@@ -398,5 +403,6 @@ def test_multiple_agents_same_policy(client: TestClient) -> None:
     
     assert len(rules_1) == 3
     assert len(rules_2) == 3
-    assert {r["rule"]["id"] for r in rules_1} == {1, 2, 3}
-    assert {r["rule"]["id"] for r in rules_2} == {1, 2, 3}
+    expected = {rule_1_id, rule_2_id, rule_3_id}
+    assert {r["id"] for r in rules_1} == expected
+    assert {r["id"] for r in rules_2} == expected
