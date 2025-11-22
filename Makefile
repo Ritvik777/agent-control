@@ -1,4 +1,4 @@
-.PHONY: help sync sync-all sync-models sync-server sync-sdk test test-models test-sdk lint lint-fix typecheck check build build-models build-server build-sdk publish publish-models publish-server publish-sdk hooks-install hooks-uninstall prepush
+.PHONY: help sync test test-models test-sdk lint lint-fix typecheck check build build-models build-server build-sdk publish publish-models publish-server publish-sdk hooks-install hooks-uninstall prepush
 
 # Workspace package names
 PACK_MODELS := agent-protect-models
@@ -16,8 +16,7 @@ help:
 	@echo "Agent Protect - Makefile commands"
 	@echo ""
 	@echo "Setup:"
-	@echo "  make sync            - uv sync each member (models, server, sdk)"
-	@echo "  make sync-all        - uv sync --all-packages at root (single .venv for all)"
+	@echo "  make sync            - uv sync all workspace packages at root (single .venv for all)"
 	@echo ""
 	@echo "Run:"
 	@echo "  make server-<target> - forward to server targets (e.g., server-help, server-alembic-upgrade)"
@@ -46,19 +45,8 @@ help:
 # Setup
 # ---------------------------
 
-sync: sync-models sync-server sync-sdk engine-sync
-
-sync-all:
+sync:
 	uv sync --all-packages
-
-sync-models:
-	cd $(MODELS_DIR) && uv sync
-
-sync-server:
-	cd $(SERVER_DIR) && uv sync
-
-sync-sdk:
-	cd $(SDK_DIR) && uv sync
 
 # ---------------------------
 # Run
