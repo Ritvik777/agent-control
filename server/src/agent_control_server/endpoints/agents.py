@@ -1,3 +1,4 @@
+from typing import Any
 from uuid import UUID
 
 from agent_control_models.agent import Agent as APIAgent
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import get_async_db
 from ..logging_utils import get_logger
 from ..models import Agent, AgentData, AgentVersionedTool, Policy
+from ..schema_generator import generate_agent_schema, validate_agent_schema
 from ..services.controls import list_controls_for_agent
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -68,10 +70,25 @@ async def init_agent(
         versioned_tools = [
             AgentVersionedTool(version=0, tool=tool) for tool in request.tools
         ]
+
+        # Generate agent schema from tools
+        tools_dict = [tool.model_dump(mode="json") for tool in request.tools]
+        agent_schema = generate_agent_schema(tools_dict)
+
+        # Validate generated schema
+        is_valid, errors = validate_agent_schema(agent_schema)
+        if not is_valid:
+            _logger.warning(
+                f"Generated schema validation failed for agent "
+                f"'{request.agent.agent_name}': {errors}"
+            )
+
         data_model = AgentData(
             agent_metadata=request.agent.model_dump(mode="json"),
             tools=versioned_tools,
+            agent_schema=agent_schema,  # Include schema in the model
         )
+
         new_agent = Agent(
             name=request.agent.agent_name,
             agent_uuid=request.agent.agent_id,
@@ -80,6 +97,10 @@ async def init_agent(
         db.add(new_agent)
         try:
             await db.commit()
+            _logger.info(
+                f"Created agent '{request.agent.agent_name}' with {len(request.tools)} tools "
+                f"and auto-generated schema"
+            )
         except Exception:
             await db.rollback()
             _logger.error(
@@ -136,9 +157,28 @@ async def init_agent(
     data_model.tools = new_tools
 
     if changed:
+        # Regenerate schema when tools change
+        tools_dict = [vt.tool.model_dump(mode="json") for vt in new_tools]
+        agent_schema = generate_agent_schema(tools_dict)
+
+        # Validate generated schema
+        is_valid, errors = validate_agent_schema(agent_schema)
+        if not is_valid:
+            _logger.warning(
+                f"Generated schema validation failed for agent "
+                f"'{request.agent.agent_name}': {errors}"
+            )
+
+        # Update the data model with new schema
+        data_model.agent_schema = agent_schema
         existing.data = data_model.model_dump(mode="json")
+
         try:
             await db.commit()
+            _logger.info(
+                f"Updated agent '{request.agent.agent_name}' with {len(new_tools)} tools "
+                f"and regenerated schema"
+            )
         except Exception:
             await db.rollback()
             _logger.error(
@@ -431,3 +471,69 @@ async def list_agent_controls(
 
     controls = await list_controls_for_agent(agent_id, db)
     return AgentControlsResponse(controls=controls)
+
+
+@router.get(
+    "/{agent_id}/schema",
+    summary="Get agent's auto-generated schema",
+    response_description="Schema generated from registered tools",
+)
+async def get_agent_schema(
+    agent_id: UUID, db: AsyncSession = Depends(get_async_db)
+) -> dict[str, Any]:
+    """
+    Retrieve the auto-generated schema for an agent.
+
+    The schema is automatically generated from the agent's registered tools
+    and includes:
+    - Tool definitions with input/output schemas
+    - Extracted capabilities
+    - Validation rules
+
+    Args:
+        agent_id: UUID of the agent
+        db: Database session (injected)
+
+    Returns:
+        Auto-generated agent schema
+
+    Raises:
+        HTTPException 404: Agent not found or no schema available
+    """
+    result = await db.execute(select(Agent).where(Agent.agent_uuid == agent_id))
+    agent: Agent | None = result.scalars().first()
+    if agent is None:
+        raise HTTPException(
+            status_code=404, detail=f"Agent with ID '{agent_id}' not found"
+        )
+
+    # Extract schema from agent data
+    schema = agent.data.get("agent_schema")
+    if schema is None:
+        # Check if agent has tools - if so, we can generate schema on-demand
+        try:
+            data_model = AgentData.model_validate(agent.data)
+            if data_model.tools:
+                # Generate schema from existing tools for backward compatibility
+                _logger.info(f"Generating schema for legacy agent '{agent.name}'")
+                tools_dict = [vt.tool.model_dump(mode="json") for vt in data_model.tools]
+                schema = generate_agent_schema(tools_dict)
+
+                # Optionally persist it for next time
+                data_model.agent_schema = schema
+                agent.data = data_model.model_dump(mode="json")
+                await db.commit()
+                _logger.info(f"Persisted auto-generated schema for agent '{agent.name}'")
+
+                return schema
+        except ValidationError:
+            _logger.error(f"Failed to parse agent data for '{agent.name}'", exc_info=True)
+
+        raise HTTPException(
+            status_code=404,
+            detail=f"No schema available for agent '{agent.name}'. "
+                   f"Schema is auto-generated when agents are registered with tools."
+        )
+
+    # Cast to satisfy mypy since we know schema is dict[str, Any] at this point
+    return dict(schema)

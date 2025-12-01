@@ -40,9 +40,6 @@ from . import agents, control_sets, controls, evaluation, policies
 # Import client and operations modules
 from .client import AgentControlClient
 
-# Import YAML validator
-from .yaml_validator import ValidationResult, YAMLValidator, print_validation_result, validate_yaml
-
 # Import models if available
 try:
     from agent_control_models import (
@@ -400,11 +397,10 @@ __all__ = [
     "control_sets",
     "evaluation",
 
-    # YAML Validation
-    "validate_yaml",
-    "YAMLValidator",
-    "ValidationResult",
-    "print_validation_result",
+    # Tool inference utilities
+    "tool",
+    "extract_tools_from_functions",
+    "tools_from_module",
 
     # Models (if available)
     "Agent",

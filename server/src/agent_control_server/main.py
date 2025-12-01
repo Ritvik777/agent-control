@@ -1,6 +1,5 @@
 """Main server application entry point."""
 
-import asyncio
 import traceback
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -26,33 +25,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     log_level = "DEBUG" if settings.debug else "INFO"
     configure_logging(level=log_level)
 
-    # Startup: Configure YAML hot-reload if enabled
-    watcher_task: asyncio.Task | None = None
-    if settings.yaml_watch_enabled:
-        yaml_paths = settings.get_yaml_watch_paths()
-        if yaml_paths:
-            import logging
-
-            from .yaml_watcher import configure_watcher
-            logger = logging.getLogger(__name__)
-
-            logger.info(f"🔄 YAML hot-reload enabled for: {yaml_paths}")
-            watcher = configure_watcher(
-                yaml_paths=yaml_paths,
-                control_set_name=settings.yaml_control_set_name,
-                auto_create_control_set=True
-            )
-            watcher_task = watcher.start()
-            logger.info("✓ YAML watcher started")
-
     yield
-
-    # Shutdown: Stop YAML watcher if running
-    if watcher_task and not watcher_task.done():
-        from .yaml_watcher import get_watcher
-        watcher_instance = get_watcher()
-        if watcher_instance:
-            await watcher_instance.stop()
 
 
 app = FastAPI(

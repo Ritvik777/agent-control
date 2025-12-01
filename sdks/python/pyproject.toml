@@ -7,7 +7,7 @@ dependencies = [
     "agent-control-models>=0.1.0",
     "httpx>=0.26.0",
     "pydantic>=2.5.0",
-    "pyyaml>=6.0.0",
+    "docstring-parser>=0.15",  # For @tool decorator schema inference
 ]
 authors = [
     {name = "Agent Control Team"}

@@ -17,8 +17,10 @@ class AgentVersionedTool(BaseModel):
     tool: AgentTool
 
 class AgentData(BaseModel):
-    agent_metadata: dict
+    agent_metadata: dict[str, Any]
     tools: list[AgentVersionedTool]
+    # Renamed to agent_schema to avoid Pydantic BaseModel.schema() conflict
+    agent_schema: dict[str, Any] | None = None
 
 class Policy(Base):
     __tablename__ = "policies"

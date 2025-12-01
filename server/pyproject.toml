@@ -13,8 +13,6 @@ dependencies = [
     "SQLAlchemy>=2.0.0",
     "psycopg[binary]>=3.1",
     "greenlet>=3.0",
-    "watchfiles>=0.20.0",
-    "pyyaml>=6.0",
 ]
 authors = [
     {name = "Agent Protect Team"}
@@ -30,7 +28,6 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.8.0",
     "alembic>=1.13.0",
-    "types-PyYAML>=6.0.0",
 ]
 
 [project.scripts]
