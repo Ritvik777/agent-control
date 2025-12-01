@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # CORS settings
     cors_origins: list[str] | str = "*"
 
+    # YAML hot-reload settings
+    yaml_watch_enabled: bool = False
+    yaml_watch_paths: str | None = None  # Comma-separated paths
+    yaml_control_set_name: str | None = None
+
     def get_cors_origins(self) -> list[str]:
         """Parse CORS origins from string or list."""
         if isinstance(self.cors_origins, str):
@@ -63,6 +68,12 @@ class Settings(BaseSettings):
                 return ["*"]
             return [origin.strip() for origin in self.cors_origins.split(",")]
         return self.cors_origins
+
+    def get_yaml_watch_paths(self) -> list[str]:
+        """Parse YAML watch paths from comma-separated string."""
+        if not self.yaml_watch_paths:
+            return []
+        return [p.strip() for p in self.yaml_watch_paths.split(",") if p.strip()]
 
 
 db_config = AgentControlServerDatabaseConfig()

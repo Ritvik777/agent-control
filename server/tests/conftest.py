@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from agent_control_server.config import db_config
 from agent_control_server.db import Base
@@ -10,6 +11,14 @@ import agent_control_server.models  # ensure models are imported so tables are r
 
 # Create sync engine for tests (schema creation/cleanup)
 engine = create_engine(db_config.get_url(), echo=False)
+
+# Create async engine for async tests
+async_engine = create_async_engine(db_config.get_url(), echo=False)
+AsyncSessionTest = async_sessionmaker(
+    bind=async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
 
 
 @pytest.fixture(scope="session")
@@ -64,3 +73,11 @@ def clean_db():
         conn.execute(text("DELETE FROM control_sets"))
         conn.execute(text("DELETE FROM controls"))
     yield
+
+
+@pytest.fixture
+async def async_db():
+    """Provide async database session for tests."""
+    async with AsyncSessionTest() as session:
+        yield session
+        await session.rollback()
