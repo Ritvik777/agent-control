@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
-from . import agents, control_sets, controls, evaluation, policies
+from . import agents, control_sets, controls, evaluation, plugins, policies
 
 # Import client and operations modules
 from .client import AgentControlClient
@@ -396,6 +396,7 @@ __all__ = [
     "controls",
     "control_sets",
     "evaluation",
+    "plugins",
 
     # Tool inference utilities
     "tool",

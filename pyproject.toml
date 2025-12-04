@@ -8,11 +8,12 @@
 # To work with each component, navigate to its directory and use uv commands there.
 
 [tool.uv.workspace]
-members = ["models", "server", "sdks/python", "engine"]
+members = ["models", "server", "sdks/python", "engine", "plugins"]
 
 [tool.uv.sources]
 agent-control-models = { workspace = true }
 agent-control-engine = { workspace = true }
+agent-control-plugins = { workspace = true }
 
 [tool.ruff]
 line-length = 100
@@ -21,6 +22,12 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+# Allow late imports in examples (after sys.path manipulation)
+"examples/**/*.py" = ["E402"]
+# Allow late imports in tests (for test fixtures)
+"**/tests/**/*.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.12"

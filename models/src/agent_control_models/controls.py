@@ -1,10 +1,35 @@
 """Control definition models for agent protection."""
+from abc import ABC, abstractmethod
 from typing import Any, Literal
 
 import re2
 from pydantic import Field, field_validator
 
 from .base import BaseModel
+
+
+class Evaluator(ABC):
+    """Base class for all control evaluators.
+
+    Evaluators are responsible for checking if data matches a control's criteria.
+    All evaluators (regex, list, plugin) implement this interface.
+
+    The pattern is:
+        1. Create evaluator with config: `evaluator = MyEvaluator(config)`
+        2. Evaluate data: `result = evaluator.evaluate(data)`
+    """
+
+    @abstractmethod
+    def evaluate(self, data: Any) -> "EvaluatorResult":
+        """Evaluate the data against the control logic.
+
+        Args:
+            data: The data to evaluate (extracted by selector)
+
+        Returns:
+            EvaluatorResult with matched status, confidence, and metadata
+        """
+        pass
 
 
 class ControlSelector(BaseModel):
@@ -98,7 +123,26 @@ class CustomControlEvaluator(BaseModel):
     config: dict[str, Any]
 
 
-ControlEvaluator = RegexControlEvaluator | ListControlEvaluator | CustomControlEvaluator
+class PluginConfig(BaseModel):
+    """Configuration for plugin-based evaluators."""
+    plugin_name: str = Field(..., description="Name of the plugin to use")
+    plugin_config: dict[str, Any] = Field(
+        ..., description="Plugin-specific configuration"
+    )
+
+
+class PluginControlEvaluator(BaseModel):
+    """Evaluator using external plugins (e.g., Luna-2, Guardrails AI)."""
+    type: Literal["plugin"] = "plugin"
+    config: PluginConfig
+
+
+ControlEvaluator = (
+    RegexControlEvaluator
+    | ListControlEvaluator
+    | CustomControlEvaluator
+    | PluginControlEvaluator
+)
 
 
 class ControlAction(BaseModel):

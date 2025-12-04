@@ -1,20 +1,44 @@
 """Control evaluator implementations."""
-import abc
+import logging
 import re
 from typing import Any
 
 import re2
-from agent_control_models import ControlEvaluator, EvaluatorResult
-from agent_control_models.controls import ListConfig, RegexConfig
+from agent_control_models import ControlEvaluator, Evaluator, EvaluatorResult
+from agent_control_models.controls import ListConfig, PluginConfig, RegexConfig
+from agent_control_plugins import PluginEvaluator
+
+logger = logging.getLogger(__name__)
+
+# Plugin registry - lazy loaded to avoid import errors when optional plugins not installed
+_plugin_registry: dict[str, type[PluginEvaluator]] | None = None
 
 
-class Evaluator(abc.ABC):
-    """Base class for control evaluators."""
+def _get_plugin_registry() -> dict[str, type[PluginEvaluator]]:
+    """Get or initialize the plugin registry."""
+    global _plugin_registry
+    if _plugin_registry is None:
+        _plugin_registry = {}
+        _discover_plugins()
+    return _plugin_registry
 
-    @abc.abstractmethod
-    def evaluate(self, data: Any) -> EvaluatorResult:
-        """Evaluate the data against the control logic."""
-        pass
+
+def _discover_plugins() -> None:
+    """Discover and register available plugins."""
+    # Try to load Luna-2 plugin if galileo SDK is available
+    try:
+        from agent_control_plugins.luna2 import LUNA2_AVAILABLE, Luna2Plugin
+
+        if LUNA2_AVAILABLE:
+            _plugin_registry["galileo-luna2"] = Luna2Plugin  # type: ignore
+            logger.debug("Registered Luna-2 plugin")
+    except ImportError:
+        logger.debug("Luna-2 plugin not available")
+
+
+def get_plugin(plugin_name: str) -> type[PluginEvaluator] | None:
+    """Get a plugin class by name."""
+    return _get_plugin_registry().get(plugin_name)
 
 
 class RegexControlEvaluator(Evaluator):
@@ -42,7 +66,7 @@ class RegexControlEvaluator(Evaluator):
             matched=is_match,
             confidence=1.0,  # Regex is deterministic
             message=f"Regex match found: {self.pattern}" if is_match else "No match",
-            metadata={"pattern": self.pattern}
+            metadata={"pattern": self.pattern},
         )
 
 
@@ -83,16 +107,16 @@ class ListControlEvaluator(Evaluator):
                 matched=False,
                 confidence=1.0,
                 message="Empty input - Control ignored",
-                metadata={"input_count": 0}
+                metadata={"input_count": 0},
             )
 
         # 3. Short-circuit if control values are empty (Control Ignored -> Safe)
         if self._regex is None:
-             return EvaluatorResult(
+            return EvaluatorResult(
                 matched=False,
                 confidence=1.0,
                 message="Empty control values - Control ignored",
-                metadata={"input_count": len(input_values)}
+                metadata={"input_count": len(input_values)},
             )
 
         # 4. Perform matching on each item
@@ -137,23 +161,69 @@ class ListControlEvaluator(Evaluator):
                 "logic": self.logic,
                 "match_on": self.match_on,
                 "matches": matches,
-                "input_count": total_count
-            }
+                "input_count": total_count,
+            },
         )
 
 
-def get_evaluator(control_evaluator: ControlEvaluator) -> Evaluator:
-    """Factory to create an evaluator instance from configuration."""
-    # The ControlEvaluator union (RegexControlEvaluator | ListControlEvaluator)
-    # automatically types .config correctly for each case if we check type.
+def _create_plugin_evaluator(config: PluginConfig) -> Evaluator:
+    """Create a plugin evaluator instance.
 
+    Args:
+        config: Plugin configuration with plugin_name and plugin_config
+
+    Returns:
+        Plugin instance (which is an Evaluator)
+
+    Raises:
+        ValueError: If plugin not found or cannot be loaded
+    """
+    plugin_name = config.plugin_name
+    plugin_config = config.plugin_config
+
+    # Get plugin class from registry
+    plugin_class = get_plugin(plugin_name)
+    if plugin_class is None:
+        raise ValueError(
+            f"Plugin '{plugin_name}' not found. "
+            f"Available plugins can be listed with: agent_control.plugins.list_plugins()"
+        )
+
+    # Instantiate plugin with config
+    try:
+        plugin = plugin_class(plugin_config)
+        logger.info(f"Loaded plugin: {plugin_name}")
+        return plugin
+    except Exception as e:
+        logger.error(f"Failed to initialize plugin {plugin_name}: {e}")
+        raise ValueError(f"Failed to initialize plugin '{plugin_name}': {e}") from e
+
+
+def get_evaluator(control_evaluator: ControlEvaluator) -> Evaluator:
+    """Factory to create an evaluator instance from configuration.
+
+    All evaluators implement the same interface:
+        - __init__(config) - initialize with configuration
+        - evaluate(data) -> EvaluatorResult - evaluate data
+
+    Args:
+        control_evaluator: The control evaluator configuration
+
+    Returns:
+        Evaluator instance ready to use
+
+    Raises:
+        NotImplementedError: If evaluator type not supported
+        ValueError: If plugin not found (for plugin type)
+    """
     if control_evaluator.type == "regex":
-        # Pydantic guarantees control_evaluator.config is RegexConfig
-        return RegexControlEvaluator(control_evaluator.config) # type: ignore
+        return RegexControlEvaluator(control_evaluator.config)  # type: ignore
 
     elif control_evaluator.type == "list":
-        # Pydantic guarantees control_evaluator.config is ListConfig
-        return ListControlEvaluator(control_evaluator.config) # type: ignore
+        return ListControlEvaluator(control_evaluator.config)  # type: ignore
 
-    # Fallback/Placeholder
+    elif control_evaluator.type == "plugin":
+        # Plugins ARE Evaluators - no wrapper needed
+        return _create_plugin_evaluator(control_evaluator.config)  # type: ignore
+
     raise NotImplementedError(f"Evaluator type '{control_evaluator.type}' not yet implemented")

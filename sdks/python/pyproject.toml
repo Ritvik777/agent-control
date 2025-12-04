@@ -28,6 +28,12 @@ Homepage = "https://github.com/yourusername/agent-protect"
 Documentation = "https://github.com/yourusername/agent-protect#readme"
 Repository = "https://github.com/yourusername/agent-protect"
 
+[project.optional-dependencies]
+# Optional plugins - install separately as needed
+luna2 = [
+    "agent-control-plugins[luna2]",  # Galileo Luna-2 plugin
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
@@ -58,3 +64,7 @@ ignore = []
 
 [tool.ruff.lint.isort]
 known-first-party = ["agent_control"]
+
+[tool.uv.sources]
+agent-control-models = { workspace = true }
+agent-control-plugins = { workspace = true }

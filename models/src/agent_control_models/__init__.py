@@ -9,6 +9,7 @@ from .controls import (
     ControlEvaluator,
     ControlMatch,
     ControlSelector,
+    Evaluator,
     EvaluatorResult,
 )
 from .evaluation import (
@@ -30,6 +31,7 @@ __all__ = [
     "EvaluationResponse",
     "EvaluationResult",
     "ToolCall",
+    "Evaluator",
     "EvaluatorResult",
     "ControlDefinition",
     "ControlAction",

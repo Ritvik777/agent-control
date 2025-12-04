@@ -1,0 +1,27 @@
+[project]
+name = "agent-control-plugins"
+version = "0.1.0"
+description = "Plugin implementations for agent-control"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Galileo", email = "support@rungalileo.io" }]
+dependencies = [
+    "agent-control-models",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+luna2 = ["galileo>=1.34.0"]
+all = ["galileo>=1.34.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_control_plugins"]
+
+[tool.uv.sources]
+agent-control-models = { workspace = true }
+
