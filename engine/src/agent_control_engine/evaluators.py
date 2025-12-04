@@ -71,21 +71,33 @@ class RegexControlEvaluator(Evaluator):
 
 
 class ListControlEvaluator(Evaluator):
-    """Evaluator for checking if values exist in a list."""
+    """Evaluator for checking if values exist in a list.
+
+    Supports two modes:
+    - exact: Full string match (for allow/deny lists on discrete values)
+    - contains: Word boundary match (for keyword detection in free text)
+    """
 
     def __init__(self, config: ListConfig):
         self.values = [str(v) for v in config.values]
         self.logic = config.logic
         self.match_on = config.match_on
+        # Default to exact for backward compat
+        self.match_mode = getattr(config, 'match_mode', 'exact')
         self.case_sensitive = config.case_sensitive
 
         # Compile regex for matching values
-        # We use exact match anchors ^...$ because this is a list of discrete values
         if not self.values:
             self._regex = None
         else:
             escaped = [re.escape(v) for v in self.values]
-            self.pattern = f"^({'|'.join(escaped)})$"
+
+            if self.match_mode == "contains":
+                # Word boundary matching for substring/keyword detection
+                self.pattern = f"\\b({'|'.join(escaped)})\\b"
+            else:
+                # Exact match using anchors (original behavior)
+                self.pattern = f"^({'|'.join(escaped)})$"
 
             if not self.case_sensitive:
                 self.pattern = f"(?i){self.pattern}"

@@ -13,25 +13,27 @@ Usage:
         agent_id="csbot-prod-v1"
     )
 
-    # Use the control decorator
-    from agent_control import control
+    # Apply server-defined controls using the decorator
+    # Control configuration is on server - update rules without code changes!
+    @agent_control.control()
+    async def chat(message: str) -> str:
+        return await assistant.respond(message)
 
-    @control('input-validation', input='message')
-    async def handle_message(message: str):
-        return f"Processed: {message}"
+    # Apply all controls for this agent
+    @agent_control.control(policy="safety-policy")
+    async def process(input: str) -> str:
+        return await pipeline.run(input)
 
-    # Or use the client directly for custom checks
+    # Or use the client directly for server-side checks
     async with agent_control.AgentControlClient() as client:
         result = await agent_control.evaluation.check_evaluation(
             client, agent_uuid, payload, "pre"
         )
 """
 
-import importlib
 import os
 from collections.abc import Callable
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
@@ -39,6 +41,9 @@ from . import agents, control_sets, controls, evaluation, plugins, policies
 
 # Import client and operations modules
 from .client import AgentControlClient
+
+# Import control decorator
+from .control_decorators import ControlViolationError, control
 
 # Import models if available
 try:
@@ -184,10 +189,10 @@ def init(
             ]
         )
 
-        # Now use @control decorator
+        # Now use @control decorator to apply the agent's policy
         from agent_control import control
 
-        @control('input-check', input='message')
+        @control()  # Applies agent's assigned policy
         async def handle(message: str):
             return message
 
@@ -259,11 +264,40 @@ def init(
                     print(f"⚠️  Failed to register agent: {e}")
                     return None
 
-        # Run registration synchronously
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        server_controls = loop.run_until_complete(register())
-        loop.close()
+        # Run registration - handle both sync and async contexts
+        try:
+            # Check if we're already in an event loop
+            loop = asyncio.get_running_loop()
+            # We're in an async context - schedule the coroutine
+            import threading
+
+            result_container: list[list[dict[str, Any]] | None] = [None]
+            exception_container: list[Exception | None] = [None]
+
+            def run_in_thread() -> None:
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    result_container[0] = new_loop.run_until_complete(register())
+                except Exception as e:
+                    exception_container[0] = e
+                finally:
+                    new_loop.close()
+
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            thread.join(timeout=10)  # 10 second timeout
+
+            if exception_container[0]:
+                raise exception_container[0]
+            server_controls = result_container[0]
+
+        except RuntimeError:
+            # No running event loop - we're in a sync context
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            server_controls = loop.run_until_complete(register())
+            loop.close()
 
     except Exception as e:
         print(f"⚠️  Could not connect to server: {e}")
@@ -332,44 +366,9 @@ def current_agent() -> Agent | None:
     return _current_agent
 
 
-def control(step_id: str, **data_sources: str) -> Callable[[F], F]:
-    """
-    Decorator to control a function with controls from controls.yaml.
-
-    Must call agent_control.init() before using this decorator.
-
-    Args:
-        step_id: Step identifier that matches controls.yaml
-        **data_sources: Mapping of data types to parameter names
-
-    Example:
-        @control('input-validation', input='user_message', context='ctx')
-        async def process(user_message: str, ctx: dict):
-            return user_message
-
-    See control_engine.control for full documentation.
-    """
-    if _control_engine is None:
-        def decorator(func: F) -> F:
-            return func
-        return decorator
-
-    # Import the actual control decorator
-    try:
-        import sys
-        example_path = Path(__file__).parents[4] / "examples" / "langgraph" / "my_agent"
-        if example_path.exists():
-            sys.path.insert(0, str(example_path))
-
-        module = importlib.import_module("control_engine")
-        # Cast the dynamically imported decorator factory to the expected type
-        from typing import cast
-        return cast(Callable[[F], F], getattr(module, "control")(step_id, **data_sources))
-    except Exception as e:
-        print(f"⚠️  Could not load control decorator: {e}")
-        def decorator(func: F) -> F:
-            return func
-        return decorator
+# Note: The @control decorator is imported from control_decorators.py
+# It applies server-defined policies to agent functions.
+# See: from agent_control import control
 
 
 # ============================================================================
@@ -384,8 +383,12 @@ __all__ = [
     # Agent management
     "get_agent",
 
-    # Decorator
+    # Decorator (server-side policy evaluation)
     "control",
+
+    # Control Decorator
+    "control",
+    "ControlViolationError",
 
     # Client
     "AgentControlClient",

@@ -1,15 +1,23 @@
 """Luna-2 plugin implementation."""
 
+import asyncio
 import logging
 import os
 from typing import Any
 
 try:
-    from galileo.protect import invoke_protect  # type: ignore
+    from galileo.protect import Payload, Ruleset, ainvoke_protect  # type: ignore
+    from galileo_core.schemas.protect.action import PassthroughAction  # type: ignore
+    from galileo_core.schemas.protect.rule import Rule  # type: ignore
 
     LUNA2_AVAILABLE = True
 except ImportError:
     LUNA2_AVAILABLE = False
+    Payload = None  # type: ignore
+    Ruleset = None  # type: ignore
+    PassthroughAction = None  # type: ignore
+    Rule = None  # type: ignore
+    ainvoke_protect = None  # type: ignore
 
 from agent_control_models.controls import EvaluatorResult
 
@@ -172,65 +180,97 @@ class Luna2Plugin(PluginEvaluator):
         Returns:
             EvaluatorResult with matched status and metadata
         """
-        if self._validated_config.stage_type == "local":
-            return self._evaluate_local_stage(data)
-        else:
-            return self._evaluate_central_stage(data)
+        # Use async version and run it synchronously
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're in an async context, run in a new thread
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, self.evaluate_async(data))
+                    return future.result(timeout=self.get_timeout_seconds() + 5)
+            else:
+                return loop.run_until_complete(self.evaluate_async(data))
+        except RuntimeError:
+            # No event loop, create one
+            return asyncio.run(self.evaluate_async(data))
 
-    def _evaluate_local_stage(self, data: Any) -> EvaluatorResult:
-        """Evaluate using a local stage (runtime rulesets).
+    async def evaluate_async(self, data: Any) -> EvaluatorResult:
+        """Evaluate data using Galileo Luna-2 (asynchronous).
 
-        Local stages allow you to define rules dynamically at runtime,
-        giving you full control over the evaluation logic.
+        Args:
+            data: The data to evaluate (from selector)
+
+        Returns:
+            EvaluatorResult with matched status and metadata
         """
-        # Prepare payload
+        if self._validated_config.stage_type == "local":
+            return await self._evaluate_local_stage_async(data)
+        else:
+            return await self._evaluate_central_stage_async(data)
+
+    def _get_numeric_target_value(self) -> float | int | str | None:
+        """Get target_value as numeric if possible (for proper Rule comparison)."""
+        target_val = self._validated_config.target_value
+        if isinstance(target_val, (int, float)):
+            return target_val
+        if isinstance(target_val, str):
+            try:
+                return float(target_val)
+            except (ValueError, TypeError):
+                return target_val  # Keep as string for non-numeric operators
+        return target_val
+
+    async def _evaluate_local_stage_async(self, data: Any) -> EvaluatorResult:
+        """Async version: Evaluate using a local stage (runtime rulesets)."""
         payload = self._prepare_payload(data)
 
-        # Build ruleset from config
-        # Note: Galileo API expects target_value as string
-        rule = {
-            "metric": self._validated_config.metric,
-            "operator": self._validated_config.operator,
-            "target_value": str(self._validated_config.target_value or ""),
-        }
+        # Create Rule with numeric target_value for proper comparison
+        rule = Rule(
+            metric=self._validated_config.metric,
+            operator=self._validated_config.operator,
+            target_value=self._get_numeric_target_value(),
+        )
 
-        # For local stages, we provide prioritized_rulesets at runtime
-        prioritized_rulesets = [
-            {
-                "rules": [rule],
-                "action": {"type": "PASSTHROUGH"},  # We handle actions in agent-control
-                "description": f"Agent-control rule: {self._validated_config.metric}",
-            }
-        ]
+        # Create proper Ruleset with PassthroughAction
+        ruleset = Ruleset(
+            rules=[rule],
+            action=PassthroughAction(type="PASSTHROUGH"),
+            description=f"Agent-control rule: {self._validated_config.metric}",
+        )
 
         try:
-            # Call Galileo SDK (sync)
-            response = invoke_protect(
+            logger.info(f"[Luna2] Calling ainvoke_protect")
+            logger.info(f"[Luna2] Payload: {payload}")
+            logger.info(f"[Luna2] Ruleset: {ruleset}")
+
+            response = await ainvoke_protect(
                 payload=payload,
-                prioritized_rulesets=prioritized_rulesets,
+                prioritized_rulesets=[ruleset],
                 project_name=self._validated_config.galileo_project,
                 timeout=self.get_timeout_seconds(),
                 metadata=self._validated_config.metadata or {},
             )
 
-            return self._parse_response(response)
+            logger.info(f"[Luna2] Response: {response}")
+            if hasattr(response, 'status'):
+                logger.info(f"[Luna2] Status: {response.status}")
+            if hasattr(response, 'text'):
+                logger.info(f"[Luna2] Text: {response.text}")
 
+            result = self._parse_response(response)
+            logger.info(f"[Luna2] Parsed: matched={result.matched}, msg={result.message}")
+            return result
         except Exception as e:
-            logger.error(f"Luna-2 evaluation error: {e}", exc_info=True)
+            logger.error(f"Luna-2 async evaluation error: {e}", exc_info=True)
             return self._handle_error(e)
 
-    def _evaluate_central_stage(self, data: Any) -> EvaluatorResult:
-        """Evaluate using a central stage (pre-defined rulesets).
-
-        Central stages are managed centrally in Galileo and can be
-        updated without changing your application code.
-        """
-        # Prepare payload
+    async def _evaluate_central_stage_async(self, data: Any) -> EvaluatorResult:
+        """Async version: Evaluate using a central stage (pre-defined rulesets)."""
         payload = self._prepare_payload(data)
 
         try:
-            # For central stages, we reference the stage by name/ID
-            response = invoke_protect(
+            response = await ainvoke_protect(
                 payload=payload,
                 project_name=self._validated_config.galileo_project,
                 stage_name=self._validated_config.stage_name,
@@ -238,34 +278,35 @@ class Luna2Plugin(PluginEvaluator):
                 timeout=self.get_timeout_seconds(),
                 metadata=self._validated_config.metadata or {},
             )
-
             return self._parse_response(response)
-
         except Exception as e:
-            logger.error(f"Luna-2 central stage error: {e}", exc_info=True)
+            logger.error(f"Luna-2 async central stage error: {e}", exc_info=True)
             return self._handle_error(e)
 
-    def _prepare_payload(self, data: Any) -> dict:
+    def _prepare_payload(self, data: Any) -> Any:
         """Prepare the Payload for Galileo protect.
 
         Payload has 'input' and 'output' fields based on what we're checking.
+        Returns a Galileo Payload object.
         """
+        data_str = str(data) if data is not None else ""
+
         # Check explicit payload_field config
         payload_field = self._validated_config.payload_field
         if payload_field == "output":
-            return {"input": "", "output": str(data) if data is not None else ""}
+            return Payload(input="", output=data_str)
         elif payload_field == "input":
-            return {"input": str(data) if data is not None else "", "output": ""}
+            return Payload(input=data_str, output="")
 
         # Determine from metric name if provided
         metric = self._validated_config.metric or ""
         is_output_metric = "output" in metric
 
         if is_output_metric:
-            return {"input": "", "output": str(data) if data is not None else ""}
+            return Payload(input="", output=data_str)
         else:
             # Default to input for central stages or input metrics
-            return {"input": str(data) if data is not None else "", "output": ""}
+            return Payload(input=data_str, output="")
 
     def _parse_response(self, response: Any) -> EvaluatorResult:
         """Parse Galileo protect response into EvaluatorResult.

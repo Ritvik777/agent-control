@@ -102,6 +102,9 @@ class ListConfig(BaseModel):
     match_on: Literal["match", "no_match"] = Field(
         "match", description="Trigger rule on match or no match"
     )
+    match_mode: Literal["exact", "contains"] = Field(
+        "exact", description="'exact' for full string match, 'contains' for keyword/substring match"
+    )
     case_sensitive: bool = Field(False, description="Whether matching is case sensitive")
 
 

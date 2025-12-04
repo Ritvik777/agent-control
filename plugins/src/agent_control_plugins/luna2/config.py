@@ -1,6 +1,6 @@
 """Configuration models for Luna-2 plugin."""
 
-from typing import Any, Literal
+from typing import Any, Literal, Union
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -27,18 +27,18 @@ class Luna2Config(BaseModel):
     - local: Define rules at runtime (requires metric, operator, target_value)
     - central: Reference pre-defined stages in Galileo (requires stage_name)
 
-    Example (local stage):
+    Example (local stage with numeric threshold - recommended):
         ```python
         config = Luna2Config(
             stage_type="local",
             metric="input_toxicity",
             operator="gt",
-            target_value="0.5",
+            target_value=0.5,  # Use numeric for proper comparison
             galileo_project="my-project",
         )
         ```
 
-    Example (central stage):
+    Example (central stage - recommended for production):
         ```python
         config = Luna2Config(
             stage_type="central",
@@ -46,6 +46,9 @@ class Luna2Config(BaseModel):
             galileo_project="my-project",
         )
         ```
+
+    Note: For numeric comparisons (gt, lt, gte, lte), use numeric target_value
+    (float/int) instead of strings for proper evaluation.
     """
 
     stage_type: Literal["local", "central"] = Field(
@@ -62,9 +65,9 @@ class Luna2Config(BaseModel):
         default=None,
         description="Comparison operator (required for local stage)",
     )
-    target_value: str | None = Field(
+    target_value: Union[str, float, int, None] = Field(
         default=None,
-        description="Target value for comparison (required for local stage)",
+        description="Target value for comparison (required for local stage). Can be string or number.",
     )
 
     # Central stage fields
