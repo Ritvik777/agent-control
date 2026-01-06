@@ -68,18 +68,39 @@ async def safety_check_node(state: AgentState) -> dict:
             "safety_reason": "Agent Protect not configured"
         }
 
-    # Check with Agent Protect
+    # Check with Agent Control server
     try:
-        agent_control_url = os.getenv("AGENT_PROTECT_URL", "http://localhost:8000")
+        import uuid as uuid_module
+
+        agent_control_url = os.getenv("AGENT_CONTROL_URL", "http://localhost:8000")
+        # Generate a deterministic agent UUID for this demo
+        agent_uuid = str(uuid_module.uuid5(uuid_module.NAMESPACE_DNS, "langgraph-demo-agent"))
+
         async with AgentControlClient(base_url=agent_control_url) as client:
-            result = await client.check_evaluation(
-                content=user_content,
-                context={"source": "langgraph_agent", "message_type": "user_input"}
+            # Call the evaluation endpoint
+            response = await client.http_client.post(
+                "/api/v1/evaluation",
+                json={
+                    "agent_uuid": agent_uuid,
+                    "payload": {"input": str(user_content)},
+                    "check_stage": "pre"
+                }
             )
+            response.raise_for_status()
+            result = response.json()
+
+            is_safe = result.get("is_safe", True)
+            matches = result.get("matches", [])
+            reason = "Content passed safety checks"
+
+            if not is_safe and matches:
+                # Get the reason from the first match
+                first_match = matches[0]
+                reason = first_match.get("result", {}).get("message", "Content failed safety checks")
 
             return {
-                "safety_check_passed": result.is_safe,
-                "safety_reason": result.reason
+                "safety_check_passed": is_safe,
+                "safety_reason": reason
             }
     except Exception as e:
         print(f"Safety check error: {e}")

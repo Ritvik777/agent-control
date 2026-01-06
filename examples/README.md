@@ -1,239 +1,162 @@
-# Agent Protect Examples
+# Agent Control Examples
 
-This directory contains examples demonstrating how to use Agent Protect in various scenarios.
+This directory contains examples demonstrating how to use Agent Control in various scenarios.
 
-## Quick Start Examples
+## Quick Start
 
-### [basic_usage.py](./basic_usage.py)
+### Prerequisites
 
-Basic example showing how to use the Agent Protect SDK to check content safety.
+1. Start the Agent Control server:
+   ```bash
+   cd server && make run
+   ```
+
+2. (Optional) Set environment variables:
+   ```bash
+   export AGENT_CONTROL_URL=http://localhost:8000
+   export OPENAI_API_KEY=your_key_here  # For LangGraph examples
+   ```
+
+## Example Categories
+
+### 🚀 Agent Control Demo (`agent_control_demo/`)
+
+Complete examples showing the agent control workflow:
 
 ```bash
-python basic_usage.py
+# 1. Create controls on the server
+uv run python examples/agent_control_demo/setup_controls.py
+
+# 2. Run the demo agent with controls
+uv run python examples/agent_control_demo/demo_agent.py
+
+# 3. Update controls dynamically
+uv run python examples/agent_control_demo/update_controls.py --allow-ssn
+uv run python examples/agent_control_demo/update_controls.py --block-ssn
 ```
 
-**What it demonstrates**:
-- Connecting to the Agent Protect server
-- Checking content safety
-- Handling safe and unsafe results
-- Using the SDK's boolean interface
+**Files:**
+- `setup_controls.py` - Create and configure controls via SDK
+- `demo_agent.py` - Agent that uses `@control` decorator with server-side policies
+- `update_controls.py` - Dynamically update controls without code changes
+- `agent_luna_demo.py` - Luna-2 plugin integration for AI safety checks
 
-### [batch_processing.py](./batch_processing.py)
+### 💬 Simple Chatbot (`demo_chatbot.py`)
 
-Process multiple pieces of content concurrently.
+Interactive chatbot demonstrating the `@control` decorator:
 
 ```bash
-python batch_processing.py
+uv run python examples/demo_chatbot.py
 ```
 
-**What it demonstrates**:
-- Batch processing with asyncio
-- Concurrent safety checks
-- Handling multiple results
-- Performance optimization
+### 🔧 Control Setup (`demo_setup_controls.py`)
 
-### [models_usage.py](./models_usage.py)
-
-Working directly with Agent Protect models.
+Programmatic control setup using SDK models:
 
 ```bash
-python models_usage.py
+uv run python examples/demo_setup_controls.py
 ```
 
-**What it demonstrates**:
-- Using Pydantic models directly
-- Serialization and deserialization
-- Type-safe API interactions
-- Custom request/response handling
+### 🤖 LangGraph Integration (`langgraph/my_agent/`)
 
-## Advanced Examples
-
-### [langgraph/](./langgraph/)
-
-**LangGraph Agent Integration** - Build stateful AI agents with built-in safety checks.
+LangGraph agent with built-in safety checks:
 
 ```bash
-cd langgraph/my_agent
+cd examples/langgraph/my_agent
 pip install -e .
 cp env.example .env
 python cli.py
 ```
 
-**What it demonstrates**:
-- LangGraph agent architecture
-- Conditional routing based on safety
-- Rejecting unsafe inputs gracefully
-- Interactive CLI interface
-- Comprehensive testing
-- LangGraph Cloud deployment
+**Files:**
+- `agent.py` - LangGraph agent with safety check node
+- `simple_example.py` - Simplified protection engine usage
+- `decorator_example.py` - Visual demonstration of data extraction
+- `protect_engine.py` - Local YAML-based protection engine
 
-[View full LangGraph examples →](./langgraph/README.md)
+### 🛡️ Luna-2 Demo (`luna2_demo.py`)
 
-## Prerequisites
-
-### For Basic Examples
+Direct integration with Galileo Protect API:
 
 ```bash
-# Make sure the server is running
-cd ../server
-uv run agent-protect-server
+export GALILEO_API_KEY=your_key_here
+uv run python examples/luna2_demo.py
 ```
-
-### For LangGraph Examples
-
-```bash
-# Install OpenAI API key
-export OPENAI_API_KEY=your_key_here
-
-# Install LangGraph dependencies
-cd langgraph/my_agent
-pip install -e .
-```
-
-## Running Examples
-
-### Option 1: From Repository Root
-
-```bash
-# Install the SDK workspace
-cd sdks
-uv sync
-
-# Run examples using uv
-cd ../examples
-uv run python basic_usage.py
-uv run python batch_processing.py
-uv run python models_usage.py
-```
-
-### Option 2: From Examples Directory
-
-```bash
-# Run with Python directly
-python basic_usage.py
-python batch_processing.py
-python models_usage.py
-```
-
-### Option 3: Interactive Python
-
-```python
-import asyncio
-import sys
-sys.path.insert(0, "../sdks/python/src")
-
-from agent_protect import AgentProtectClient
-
-async def main():
-    async with AgentProtectClient() as client:
-        result = await client.check_protection("Hello!")
-        print(result)
-
-asyncio.run(main())
-```
-
-## Example Categories
-
-### 🚀 Getting Started
-- `basic_usage.py` - Your first Agent Protect integration
-- `models_usage.py` - Understanding the data models
-
-### ⚡ Performance
-- `batch_processing.py` - Efficient concurrent processing
-
-### 🤖 AI Agents
-- `langgraph/my_agent/` - LangGraph agent with safety checks
-- More agent examples coming soon!
-
-### 🔧 Advanced (Coming Soon)
-- Custom safety rules
-- Webhook integration
-- Streaming responses
-- Multi-model support
 
 ## Common Patterns
 
-### Pattern 1: Simple Safety Check
+### Pattern 1: Using @control Decorator (Server-Side)
 
 ```python
-async with AgentProtectClient() as client:
-    result = await client.check_protection("User input")
-    if result.is_safe:
-        # Process the input
-        pass
-    else:
-        # Reject and explain
-        print(f"Rejected: {result.reason}")
+import agent_control
+from agent_control import control, ControlViolationError
+
+# Initialize agent (connects to server, loads policy)
+agent_control.init(agent_name="my-bot", agent_id="bot-123")
+
+# Apply the agent's assigned policy
+@control()
+async def chat(message: str) -> str:
+    return await assistant.respond(message)
+
+# Handle violations
+try:
+    response = await chat("user input")
+except ControlViolationError as e:
+    print(f"Blocked: {e.message}")
 ```
 
-### Pattern 2: Batch Processing
+### Pattern 2: Direct SDK Usage
 
 ```python
-async with AgentProtectClient() as client:
-    tasks = [
-        client.check_protection(text)
-        for text in user_inputs
-    ]
-    results = await asyncio.gather(*tasks)
+from agent_control import AgentControlClient
+
+async with AgentControlClient() as client:
+    # Check server health
+    health = await client.health_check()
+    
+    # Make API calls via http_client
+    response = await client.http_client.get("/api/v1/controls")
 ```
 
-### Pattern 3: With Context
+### Pattern 3: Programmatic Control Setup
 
 ```python
-async with AgentProtectClient() as client:
-    result = await client.check_protection(
-        content=user_input,
-        context={
-            "user_id": "12345",
-            "source": "chat",
-            "session": "abc"
-        }
+from agent_control import (
+    AgentControlClient,
+    ControlDefinition,
+    ControlSelector,
+    ControlAction,
+    EvaluatorConfig,
+    controls,
+)
+
+async with AgentControlClient() as client:
+    # Create control
+    ctrl = await controls.create_control(client, "block-pii")
+    
+    # Configure control
+    control_data = ControlDefinition(
+        description="Block PII in output",
+        enabled=True,
+        applies_to="llm_call",
+        check_stage="post",
+        selector=ControlSelector(path="output"),
+        evaluator=EvaluatorConfig(
+            plugin="regex",
+            config={"pattern": r"\b\d{3}-\d{2}-\d{4}\b"}
+        ),
+        action=ControlAction(decision="deny")
     )
-```
-
-### Pattern 4: In an Agent Workflow
-
-```python
-# See langgraph/my_agent/ for full example
-async def safety_check_node(state):
-    async with AgentProtectClient() as client:
-        result = await client.check_protection(state["user_input"])
-        return {"safety_passed": result.is_safe}
+    await controls.set_control_data(client, ctrl["control_id"], control_data)
 ```
 
 ## Testing Examples
 
-Run the test suite for any example:
-
 ```bash
-# For LangGraph examples
-cd langgraph/my_agent
+# Run from repo root
+cd examples/langgraph/my_agent
 pytest test_agent.py -v
-
-# With coverage
-pytest --cov=. --cov-report=html
-```
-
-## Environment Setup
-
-### Required Environment Variables
-
-```bash
-# For LangGraph examples
-export OPENAI_API_KEY=your_key_here
-
-# Optional: Custom Agent Protect server URL
-export AGENT_PROTECT_URL=http://localhost:8000
-```
-
-### Using .env Files
-
-```bash
-# Copy the template
-cp langgraph/my_agent/env.example .env
-
-# Edit with your values
-vim .env
 ```
 
 ## Troubleshooting
@@ -243,69 +166,22 @@ vim .env
 ```bash
 # Check if server is running
 curl http://localhost:8000/health
-
 # Expected: {"status":"healthy","version":"0.1.0"}
 ```
 
 ### Import Errors
 
 ```bash
-# Install the SDK
-cd ../sdks
-uv sync
+# Install the SDK from workspace root
+make sync
 
-# Or use pip
-pip install -e ../sdks/python
+# Or install directly
+pip install -e sdks/python
 ```
-
-### OpenAI API Issues (LangGraph)
-
-```bash
-# Verify your API key
-echo $OPENAI_API_KEY
-
-# Test it
-curl https://api.openai.com/v1/models \
-  -H "Authorization: Bearer $OPENAI_API_KEY"
-```
-
-## Contributing Examples
-
-Have an example to share? We'd love to see it!
-
-### Guidelines
-
-1. **Keep it focused**: One concept per example
-2. **Add documentation**: Include a clear README
-3. **Include tests**: Show how to test the integration
-4. **Handle errors**: Demonstrate error handling
-5. **Add comments**: Explain non-obvious code
-
-### Suggested Examples
-
-We're looking for examples that demonstrate:
-- Integration with popular frameworks (FastAPI, Flask, Django)
-- Different LLM providers (OpenAI, Anthropic, local models)
-- RAG (Retrieval Augmented Generation) pipelines
-- Multi-agent systems
-- Streaming responses
-- Custom safety rules
-- Production deployment patterns
 
 ## Resources
 
-- [Agent Protect Documentation](../README.md)
+- [Main Documentation](../README.md)
 - [SDK Documentation](../sdks/python/README.md)
 - [Server Documentation](../server/README.md)
 - [Models Documentation](../models/README.md)
-
-## Support
-
-- 📖 Check the [main README](../README.md)
-- 🐛 Report issues on [GitHub Issues](https://github.com/yourusername/agent-protect/issues)
-- 💬 Ask questions in [GitHub Discussions](https://github.com/yourusername/agent-protect/discussions)
-
-## License
-
-MIT License - see the root repository LICENSE file for details.
-
