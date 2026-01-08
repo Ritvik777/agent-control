@@ -9,8 +9,9 @@ These tests verify the full agent lifecycle:
 
 import uuid
 
-import agent_control
 import pytest
+
+import agent_control
 
 
 @pytest.mark.asyncio
@@ -53,10 +54,11 @@ async def test_agent_registration_workflow(
 
     # Verify response structure
     assert "created" in response
-    # assert "controls" in response  # controls might not be in response if no policy assigned, but InitAgentResponse model has default factory=list.
-    # But wait, SDK method register_agent returns `dict` from `response.json()`.
+    # Note: "controls" may not be in response if no policy assigned,
+    # but InitAgentResponse model has default factory=list.
+    # SDK method register_agent returns `dict` from `response.json()`.
     # The server InitAgentResponse has `controls` field.
-    
+
     # If creation succeeded, response should look like InitAgentResponse
     assert isinstance(response["created"], bool)
     # assert isinstance(response["controls"], list)
@@ -136,7 +138,8 @@ async def test_agent_update_workflow(
 @pytest.mark.asyncio
 async def test_convenience_get_agent_function(
     test_agent: dict,
-    server_url: str
+    server_url: str,
+    api_key: str | None,
 ) -> None:
     """
     Test the convenience get_agent() function.
@@ -148,7 +151,7 @@ async def test_convenience_get_agent_function(
     agent_id = test_agent["agent_id"]
 
     # Use convenience function
-    agent_data = await agent_control.get_agent(agent_id, server_url=server_url)
+    agent_data = await agent_control.get_agent(agent_id, server_url=server_url, api_key=api_key)
 
     # Verify response
     assert "agent" in agent_data
@@ -161,7 +164,8 @@ async def test_convenience_get_agent_function(
 async def test_init_function_workflow(
     test_agent_id: str,
     server_url: str,
-    sample_tools: list
+    api_key: str | None,
+    sample_tools: list,
 ) -> None:
     """
     Test the init() function workflow.
@@ -178,6 +182,7 @@ async def test_init_function_workflow(
         agent_description="Testing init function",
         agent_version="1.0.0",
         server_url=server_url,
+        api_key=api_key,
         tools=sample_tools,
         environment="test"
     )

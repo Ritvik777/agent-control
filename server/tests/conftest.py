@@ -3,11 +3,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
-from agent_control_server.config import db_config
+from agent_control_server.config import auth_settings, db_config
 from agent_control_server.db import Base
 from agent_control_server.main import app as fastapi_app
 
 import agent_control_server.models  # ensure models are imported so tables are registered
+
+# Test API keys
+TEST_API_KEY = "test-api-key-12345"
+TEST_ADMIN_API_KEY = "test-admin-key-12345"
 
 # Create sync engine for tests (schema creation/cleanup)
 engine = create_engine(db_config.get_url(), echo=False)
@@ -57,8 +61,40 @@ def db_schema() -> None:
     yield
 
 
+@pytest.fixture(autouse=True)
+def setup_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enable auth with test keys for all tests by default."""
+    monkeypatch.setattr(auth_settings, "api_key_enabled", True)
+    monkeypatch.setattr(auth_settings, "api_keys", TEST_API_KEY)
+    monkeypatch.setattr(auth_settings, "admin_api_keys", TEST_ADMIN_API_KEY)
+    # Clear cached properties so they recompute with monkeypatched values
+    for attr in ("_parsed_api_keys", "_parsed_admin_api_keys", "_all_valid_keys", "_all_admin_keys"):
+        auth_settings.__dict__.pop(attr, None)
+
+
 @pytest.fixture()
 def client(app: object) -> TestClient:
+    """Test client with valid API key header."""
+    return TestClient(
+        app,
+        raise_server_exceptions=True,
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+
+
+@pytest.fixture()
+def admin_client(app: object) -> TestClient:
+    """Test client with admin API key header."""
+    return TestClient(
+        app,
+        raise_server_exceptions=True,
+        headers={"X-API-Key": TEST_ADMIN_API_KEY},
+    )
+
+
+@pytest.fixture()
+def unauthenticated_client(app: object) -> TestClient:
+    """Test client without API key header."""
     return TestClient(app, raise_server_exceptions=True)
 
 

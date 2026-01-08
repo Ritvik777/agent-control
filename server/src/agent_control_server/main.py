@@ -6,9 +6,10 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from agent_control_models import HealthResponse
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from .auth import require_api_key
 from .config import settings
 from .endpoints.agents import router as agent_router
 from .endpoints.control_sets import router as control_set_router
@@ -77,12 +78,38 @@ async def debug_exception_handler(request: Request, exc: Exception) -> JSONRespo
 # API v1 prefix for all routes
 api_v1_prefix = f"{settings.api_prefix}/{settings.api_version}"
 
-app.include_router(agent_router, prefix=api_v1_prefix)
-app.include_router(policy_router, prefix=api_v1_prefix)
-app.include_router(control_set_router, prefix=api_v1_prefix)
-app.include_router(control_router, prefix=api_v1_prefix)
-app.include_router(evaluation_router, prefix=api_v1_prefix)
-app.include_router(plugin_router, prefix=api_v1_prefix)
+# Protected routes (require valid API key)
+app.include_router(
+    agent_router,
+    prefix=api_v1_prefix,
+    dependencies=[Depends(require_api_key)],
+)
+app.include_router(
+    policy_router,
+    prefix=api_v1_prefix,
+    dependencies=[Depends(require_api_key)],
+)
+app.include_router(
+    control_set_router,
+    prefix=api_v1_prefix,
+    dependencies=[Depends(require_api_key)],
+)
+app.include_router(
+    control_router,
+    prefix=api_v1_prefix,
+    dependencies=[Depends(require_api_key)],
+)
+app.include_router(
+    evaluation_router,
+    prefix=api_v1_prefix,
+    dependencies=[Depends(require_api_key)],
+)
+
+app.include_router(
+    plugin_router,
+    prefix=api_v1_prefix,
+    dependencies=[Depends(require_api_key)],
+)
 
 # Health check at root level (common convention)
 @app.get(

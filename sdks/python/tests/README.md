@@ -162,7 +162,27 @@ PASSED
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AGENT_PROTECT_TEST_URL` | Server URL for tests | `http://localhost:8000` |
+| `AGENT_CONTROL_TEST_URL` | Server URL for tests | `http://localhost:8000` |
+| `AGENT_CONTROL_API_KEY` | API key for server authentication | (none) |
+
+### Authentication
+
+If the server has authentication enabled, you must provide an API key:
+
+```bash
+# Set the API key for tests
+export AGENT_CONTROL_API_KEY="your-test-api-key"
+
+# Run tests
+uv run pytest tests/ -v
+```
+
+Or configure the server to disable authentication for local testing:
+
+```bash
+# In server/.env
+AGENT_CONTROL_API_KEY_ENABLED=false
+```
 
 ## Continuous Integration
 
@@ -208,15 +228,19 @@ jobs:
       - name: Start server
         run: |
           cd server
-          uv run uvicorn agent_protect_server.main:app &
+          uv run uvicorn agent_control_server.main:app &
           sleep 5
         env:
           DB_URL: postgresql+psycopg://postgres:postgres@localhost/agent_protect_test
+          AGENT_CONTROL_API_KEYS: test-api-key-ci
+          AGENT_CONTROL_ADMIN_API_KEYS: test-api-key-ci
       
       - name: Run tests
         run: |
           cd sdks/python
           uv run pytest tests/ -v --cov=agent_protect
+        env:
+          AGENT_CONTROL_API_KEY: test-api-key-ci
 ```
 
 ## Test Data Cleanup

@@ -157,6 +157,7 @@ def init(
     agent_description: str | None = None,
     agent_version: str | None = None,
     server_url: str | None = None,
+    api_key: str | None = None,
     controls_file: str | None = None,
     tools: list[dict[str, Any]] | None = None,
     **kwargs: object
@@ -181,6 +182,7 @@ def init(
         agent_version: Optional version string (e.g., "1.0.0")
         server_url: Optional server URL (defaults to AGENT_CONTROL_URL env var
                    or http://localhost:8000)
+        api_key: Optional API key for authentication (defaults to AGENT_CONTROL_API_KEY env var)
         controls_file: Optional explicit path to controls.yaml (auto-discovered if not provided)
         tools: Optional list of tools with their schemas for registration:
                [{"tool_name": "search", "arguments": {...}, "output_schema": {...}}]
@@ -248,7 +250,7 @@ def init(
         import asyncio
 
         async def register() -> list[dict[str, Any]] | None:
-            async with AgentControlClient(base_url=_server_url) as client:
+            async with AgentControlClient(base_url=_server_url, api_key=api_key) as client:
                 # Check server health first
                 try:
                     health = await client.health_check()
@@ -330,13 +332,18 @@ def init(
     return _current_agent
 
 
-async def get_agent(agent_id: str, server_url: str | None = None) -> dict[str, Any]:
+async def get_agent(
+    agent_id: str,
+    server_url: str | None = None,
+    api_key: str | None = None,
+) -> dict[str, Any]:
     """
     Get agent details from the server by ID.
 
     Args:
         agent_id: UUID or string identifier of the agent
         server_url: Optional server URL (defaults to AGENT_CONTROL_URL env var)
+        api_key: Optional API key for authentication (defaults to AGENT_CONTROL_API_KEY env var)
 
     Returns:
         Dictionary containing:
@@ -364,7 +371,7 @@ async def get_agent(agent_id: str, server_url: str | None = None) -> dict[str, A
     """
     _final_server_url = server_url or os.getenv('AGENT_CONTROL_URL') or 'http://localhost:8000'
 
-    async with AgentControlClient(base_url=_final_server_url) as client:
+    async with AgentControlClient(base_url=_final_server_url, api_key=api_key) as client:
         return await agents.get_agent(client, agent_id)
 
 

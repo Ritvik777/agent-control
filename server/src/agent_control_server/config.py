@@ -1,6 +1,67 @@
 """Server configuration settings."""
 
+from functools import cached_property
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class AuthSettings(BaseSettings):
+    """Authentication configuration for API key validation."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+        env_prefix="AGENT_CONTROL_",
+    )
+
+    # Master toggle for authentication (disabled by default for local development)
+    # Enable in production: AGENT_CONTROL_API_KEY_ENABLED=true
+    api_key_enabled: bool = False
+
+    # API keys (comma-separated list supports multiple keys for rotation)
+    # Env: AGENT_CONTROL_API_KEYS="key1,key2,key3"
+    api_keys: str = ""
+
+    # Admin API keys (subset with elevated privileges)
+    # Env: AGENT_CONTROL_ADMIN_API_KEYS="admin-key1,admin-key2"
+    admin_api_keys: str = ""
+
+    @cached_property
+    def _parsed_api_keys(self) -> set[str]:
+        """Parse and cache API keys from comma-separated string."""
+        if not self.api_keys:
+            return set()
+        return {k.strip() for k in self.api_keys.split(",") if k.strip()}
+
+    @cached_property
+    def _parsed_admin_api_keys(self) -> set[str]:
+        """Parse and cache admin API keys from comma-separated string."""
+        if not self.admin_api_keys:
+            return set()
+        return {k.strip() for k in self.admin_api_keys.split(",") if k.strip()}
+
+    @cached_property
+    def _all_valid_keys(self) -> set[str]:
+        """Cache the union of all valid keys for fast lookup."""
+        return self._parsed_api_keys | self._parsed_admin_api_keys
+
+    def get_api_keys(self) -> set[str]:
+        """Get parsed API keys (cached)."""
+        return self._parsed_api_keys
+
+    def get_admin_api_keys(self) -> set[str]:
+        """Get parsed admin API keys (cached)."""
+        return self._parsed_admin_api_keys
+
+    def is_valid_api_key(self, key: str) -> bool:
+        """Check if key is a valid API key (regular or admin). O(1) lookup."""
+        return key in self._all_valid_keys
+
+    def is_admin_api_key(self, key: str) -> bool:
+        """Check if key is an admin API key. O(1) lookup."""
+        return key in self._parsed_admin_api_keys
 
 
 class AgentControlServerDatabaseConfig(BaseSettings):
@@ -65,6 +126,7 @@ class Settings(BaseSettings):
         return self.cors_origins
 
 
+auth_settings = AuthSettings()
 db_config = AgentControlServerDatabaseConfig()
 settings = Settings()
 

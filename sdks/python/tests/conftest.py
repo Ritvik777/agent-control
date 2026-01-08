@@ -10,10 +10,11 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
-import agent_control
 import httpx
 import pytest
 import pytest_asyncio
+
+import agent_control
 
 
 def pytest_exception_interact(node, call, report):
@@ -46,6 +47,17 @@ def server_url() -> str:
     return os.getenv("AGENT_CONTROL_TEST_URL", "http://localhost:8000")
 
 
+@pytest.fixture(scope="session")
+def api_key() -> str | None:
+    """
+    Get the API key for server authentication.
+
+    Override with AGENT_CONTROL_API_KEY environment variable.
+    Returns None if not set (for servers with auth disabled).
+    """
+    return os.getenv("AGENT_CONTROL_API_KEY")
+
+
 @pytest_asyncio.fixture(scope="session")
 async def verify_server_running(server_url: str) -> None:
     """
@@ -65,14 +77,19 @@ async def verify_server_running(server_url: str) -> None:
 @pytest_asyncio.fixture
 async def client(
     server_url: str,
+    api_key: str | None,
     verify_server_running: None
 ) -> AsyncGenerator[agent_control.AgentControlClient, None]:
     """
     Provide an authenticated Agent Control client for tests.
 
     The client is automatically closed after the test completes.
+    Uses API key from AGENT_CONTROL_API_KEY environment variable if set.
     """
-    async with agent_control.AgentControlClient(base_url=server_url) as client:
+    async with agent_control.AgentControlClient(
+        base_url=server_url,
+        api_key=api_key,
+    ) as client:
         yield client
 
 
