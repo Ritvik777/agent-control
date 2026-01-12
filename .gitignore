@@ -71,3 +71,6 @@ Thumbs.db
 
 # Intellij
 *.iml
+
+## CLAUDE
+.claude

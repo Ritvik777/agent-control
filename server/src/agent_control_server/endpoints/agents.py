@@ -18,12 +18,19 @@ from agent_control_models.server import (
 )
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_async_db
 from ..logging_utils import get_logger
-from ..models import Agent, AgentData, Policy
+from ..models import (
+    Agent,
+    AgentData,
+    ControlSet,
+    Policy,
+    control_set_controls,
+    policy_control_sets,
+)
 from ..services.controls import list_controls_for_agent, list_controls_for_policy
 from ..services.evaluator_utils import parse_evaluator_ref, validate_config_against_schema
 from ..services.schema_compat import (
@@ -37,6 +44,32 @@ _logger = get_logger(__name__)
 
 # Cache for built-in plugin names (populated on first use)
 _BUILTIN_PLUGIN_NAMES: set[str] | None = None
+
+# Pagination constants
+_DEFAULT_PAGINATION_OFFSET = 0
+_DEFAULT_PAGINATION_LIMIT = 20
+_MAX_PAGINATION_LIMIT = 100
+
+
+# =============================================================================
+# List Agents Models
+# =============================================================================
+
+
+class AgentSummary(BaseModel):
+    """Summary information for an agent in list view."""
+
+    agent_id: UUID
+    agent_name: str
+    agent_description: str | None = None
+    active_controls_count: int = 0
+
+
+class ListAgentsResponse(BaseModel):
+    """Response for listing all agents."""
+
+    agents: list[AgentSummary]
+    pagination: "PaginationInfo"
 
 
 def _get_builtin_plugin_names() -> set[str]:
@@ -114,6 +147,93 @@ async def _validate_policy_controls_for_agent(
                 )
 
     return errors
+
+
+@router.get(
+    "",
+    response_model=ListAgentsResponse,
+    summary="List all agents",
+    response_description="List of all registered agents with summary information",
+)
+async def list_agents(
+    offset: int = _DEFAULT_PAGINATION_OFFSET,
+    limit: int = _DEFAULT_PAGINATION_LIMIT,
+    db: AsyncSession = Depends(get_async_db),
+) -> ListAgentsResponse:
+    """
+    List all registered agents with summary information.
+
+    Returns all agents including:
+    - Agent ID and name
+    - Description
+    - Count of active controls
+
+    Args:
+        offset: Pagination offset (default 0)
+        limit: Pagination limit (default 20, max 100)
+        db: Database session (injected)
+
+    Returns:
+        ListAgentsResponse with agent summaries and pagination info
+    """
+    # Clamp limit
+    limit = min(max(1, limit), _MAX_PAGINATION_LIMIT)
+    # Get total count
+    count_result = await db.execute(select(func.count(Agent.agent_uuid)))
+    total = count_result.scalar() or 0
+
+    # Query agents with pagination
+    query = (
+        select(Agent)
+        .order_by(Agent.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    agents = result.scalars().all()
+
+    # Batch query: Get control counts for all agents at once
+    # Join: Agent -> Policy -> ControlSets -> control_set_controls (junction table)
+    # Group by agent_uuid and count distinct control IDs from junction table
+    control_counts_query = (
+        select(
+            Agent.agent_uuid,
+            func.count(func.distinct(control_set_controls.c.control_id)).label("count"),
+        )
+        .outerjoin(Policy, Agent.policy_id == Policy.id)
+        .outerjoin(policy_control_sets, Policy.id == policy_control_sets.c.policy_id)
+        .outerjoin(ControlSet, policy_control_sets.c.control_set_id == ControlSet.id)
+        .outerjoin(control_set_controls, ControlSet.id == control_set_controls.c.control_set_id)
+        .where(Agent.agent_uuid.in_([agent.agent_uuid for agent in agents]))
+        .group_by(Agent.agent_uuid)
+    )
+    control_counts_result = await db.execute(control_counts_query)
+    control_counts_map = {row[0]: row[1] for row in control_counts_result.all()}
+
+    agent_summaries = []
+
+    for agent in agents:
+        # Extract description directly from dict (avoid expensive Pydantic validation)
+        # agent.data is JSONB column, always a dict
+        agent_meta = agent.data.get("agent_metadata", {})
+        description = agent_meta.get("agent_description") if isinstance(agent_meta, dict) else None
+
+        # Get active controls count from batched query result
+        active_controls = control_counts_map.get(agent.agent_uuid, 0)
+
+        agent_summaries.append(
+            AgentSummary(
+                agent_id=agent.agent_uuid,
+                agent_name=agent.name,
+                agent_description=description,
+                active_controls_count=active_controls,
+            )
+        )
+
+    return ListAgentsResponse(
+        agents=agent_summaries,
+        pagination=PaginationInfo(offset=offset, limit=limit, total=total),
+    )
 
 
 @router.post(
@@ -654,8 +774,8 @@ class ListEvaluatorsResponse(BaseModel):
 )
 async def list_agent_evaluators(
     agent_id: UUID,
-    offset: int = 0,
-    limit: int = 20,
+    offset: int = _DEFAULT_PAGINATION_OFFSET,
+    limit: int = _DEFAULT_PAGINATION_LIMIT,
     db: AsyncSession = Depends(get_async_db),
 ) -> ListEvaluatorsResponse:
     """
@@ -678,7 +798,7 @@ async def list_agent_evaluators(
         HTTPException 404: Agent not found
     """
     # Clamp limit
-    limit = min(max(1, limit), 100)
+    limit = min(max(1, limit), _MAX_PAGINATION_LIMIT)
 
     result = await db.execute(select(Agent).where(Agent.agent_uuid == agent_id))
     agent: Agent | None = result.scalars().first()

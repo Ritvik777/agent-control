@@ -116,6 +116,8 @@ class Settings(BaseSettings):
 
     # CORS settings
     cors_origins: list[str] | str = "*"
+    allow_methods: list[str] = ["*"]
+    allow_headers: list[str] = ["*"]
 
     def get_cors_origins(self) -> list[str]:
         """Parse CORS origins from string or list."""

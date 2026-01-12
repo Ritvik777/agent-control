@@ -1,0 +1,78 @@
+import createClient from "openapi-fetch";
+
+import type { paths } from "./generated/api-types";
+import type {
+  GetAgentControlsPathParams,
+  GetAgentPathParams,
+  InitAgentRequestBody,
+  ListAgentsQueryParams,
+} from "./types";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+export const apiClient = createClient<paths>({
+  baseUrl: API_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+// Add request/response interceptors if needed
+apiClient.use({
+  async onRequest({ request }) {
+    // Add authentication token if available
+    const token = getAuthToken();
+    if (token) {
+      request.headers.set("Authorization", `Bearer ${token}`);
+    }
+    return request;
+  },
+  async onResponse({ response }) {
+    // Handle 401 responses globally
+    if (response.status === 401) {
+      // Handle unauthorized - redirect to login or refresh token
+      console.warn("Unauthorized request detected");
+    }
+    return response;
+  },
+});
+
+// Helper to get auth token (implement based on your auth strategy)
+function getAuthToken(): string | null {
+  // For now, return null. Implement token retrieval logic here
+  // e.g., from localStorage, cookies, or session
+  return null;
+}
+
+// Typed API methods
+export const api = {
+  agents: {
+    list: (params?: ListAgentsQueryParams) =>
+      apiClient.GET("/api/v1/agents", {
+        params: { query: params },
+      }),
+    get: (agentId: GetAgentPathParams["agent_id"]) =>
+      apiClient.GET("/api/v1/agents/{agent_id}", {
+        params: { path: { agent_id: agentId } },
+      }),
+    initAgent: (data: InitAgentRequestBody) =>
+      apiClient.POST("/api/v1/agents/initAgent", { body: data }),
+    getControls: (agentId: GetAgentControlsPathParams["agent_id"]) =>
+      apiClient.GET("/api/v1/agents/{agent_id}/controls", {
+        params: { path: { agent_id: agentId } },
+      }),
+    setPolicy: (agentId: GetAgentPathParams["agent_id"], policyId: number) =>
+      apiClient.POST("/api/v1/agents/{agent_id}/policy/{policy_id}", {
+        params: { path: { agent_id: agentId, policy_id: policyId } },
+      }),
+    getPolicy: (agentId: GetAgentPathParams["agent_id"]) =>
+      apiClient.GET("/api/v1/agents/{agent_id}/policy", {
+        params: { path: { agent_id: agentId } },
+      }),
+    deletePolicy: (agentId: GetAgentPathParams["agent_id"]) =>
+      apiClient.DELETE("/api/v1/agents/{agent_id}/policy", {
+        params: { path: { agent_id: agentId } },
+      }),
+  },
+  // Add other resources as needed
+};
