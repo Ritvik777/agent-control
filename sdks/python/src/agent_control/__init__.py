@@ -390,6 +390,53 @@ def current_agent() -> Agent | None:
     return _current_agent
 
 
+async def list_agents(
+    server_url: str | None = None,
+    api_key: str | None = None,
+    cursor: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """
+    List all registered agents from the server.
+
+    Args:
+        server_url: Optional server URL (defaults to AGENT_CONTROL_URL env var)
+        api_key: Optional API key for authentication (defaults to AGENT_CONTROL_API_KEY env var)
+        cursor: Optional cursor for pagination (UUID of last agent from previous page)
+        limit: Number of results per page (default 20, max 100)
+
+    Returns:
+        Dictionary containing:
+            - agents: List of agent summaries with agent_id, agent_name,
+                      policy_id, created_at, tool_count, evaluator_count
+            - pagination: Object with limit, total, next_cursor, has_more
+
+    Raises:
+        httpx.HTTPError: If request fails
+
+    Example:
+        import asyncio
+        import agent_control
+
+        async def main():
+            result = await agent_control.list_agents()
+            print(f"Total agents: {result['pagination']['total']}")
+            for agent in result['agents']:
+                print(f"  - {agent['agent_name']} ({agent['agent_id']})")
+            # Fetch next page
+            if result['pagination']['has_more']:
+                next_page = await agent_control.list_agents(
+                    cursor=result['pagination']['next_cursor']
+                )
+
+        asyncio.run(main())
+    """
+    _final_server_url = server_url or os.getenv('AGENT_CONTROL_URL') or 'http://localhost:8000'
+
+    async with AgentControlClient(base_url=_final_server_url, api_key=api_key) as client:
+        return await agents.list_agents(client, cursor=cursor, limit=limit)
+
+
 # Note: The @control decorator is imported from control_decorators.py
 # It applies server-defined policies to agent functions.
 # See: from agent_control import control
@@ -406,6 +453,7 @@ __all__ = [
 
     # Agent management
     "get_agent",
+    "list_agents",
 
     # Decorator (server-side policy evaluation)
     "control",

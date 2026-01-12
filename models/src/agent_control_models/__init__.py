@@ -28,7 +28,12 @@ from .plugin import (
     register_plugin,
 )
 from .policy import Policy
-from .server import EvaluatorSchema
+from .server import (
+    AgentSummary,
+    EvaluatorSchema,
+    ListAgentsResponse,
+    PaginationInfo,
+)
 
 __all__ = [
     # Health
@@ -63,6 +68,9 @@ __all__ = [
     "list_plugins",
     "clear_plugins",
     # Server models
+    "AgentSummary",
     "EvaluatorSchema",
+    "ListAgentsResponse",
+    "PaginationInfo",
 ]
 

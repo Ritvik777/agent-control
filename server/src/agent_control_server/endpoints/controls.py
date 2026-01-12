@@ -3,11 +3,13 @@ from agent_control_models.server import (
     CreateControlRequest,
     CreateControlResponse,
     GetControlDataResponse,
+    GetControlResponse,
     SetControlDataRequest,
     SetControlDataResponse,
 )
 from fastapi import APIRouter, Depends, HTTPException
 from jsonschema_rs import ValidationError as JSONSchemaValidationError
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,6 +73,57 @@ async def create_control(
             detail=f"Failed to create control '{request.name}': database error",
         )
     return CreateControlResponse(control_id=control.id)
+
+
+@router.get(
+    "/{control_id}",
+    response_model=GetControlResponse,
+    summary="Get control details",
+    response_description="Control metadata and configuration",
+)
+async def get_control(
+    control_id: int, db: AsyncSession = Depends(get_async_db)
+) -> GetControlResponse:
+    """
+    Retrieve a control by ID including its name and configuration data.
+
+    Args:
+        control_id: ID of the control
+        db: Database session (injected)
+
+    Returns:
+        GetControlResponse with control id, name, and data
+
+    Raises:
+        HTTPException 404: Control not found
+    """
+    res = await db.execute(select(Control).where(Control.id == control_id))
+    control = res.scalars().first()
+    if control is None:
+        raise HTTPException(
+            status_code=404, detail=f"Control with ID '{control_id}' not found"
+        )
+
+    # Parse data if present and non-empty
+    control_data: ControlDefinition | None = None
+    if control.data:
+        try:
+            control_data = ControlDefinition.model_validate(control.data)
+        except ValidationError as e:
+            # Data exists but is corrupted - log and return None
+            _logger.warning(
+                "Control '%s' (id=%s) has corrupted data that failed validation: %s",
+                control.name,
+                control_id,
+                str(e),
+            )
+            control_data = None
+
+    return GetControlResponse(
+        id=control.id,
+        name=control.name,
+        data=control_data,
+    )
 
 
 @router.get(

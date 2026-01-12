@@ -6,12 +6,15 @@ from agent_control_models.agent import Agent as APIAgent
 from agent_control_models.agent import AgentTool
 from agent_control_models.server import (
     AgentControlsResponse,
+    AgentSummary,
     DeletePolicyResponse,
     EvaluatorSchema,
     GetAgentResponse,
     GetPolicyResponse,
     InitAgentRequest,
     InitAgentResponse,
+    ListAgentsResponse,
+    PaginationInfo,
     PatchAgentRequest,
     PatchAgentResponse,
     SetPolicyResponse,
@@ -54,22 +57,6 @@ _MAX_PAGINATION_LIMIT = 100
 # =============================================================================
 # List Agents Models
 # =============================================================================
-
-
-class AgentSummary(BaseModel):
-    """Summary information for an agent in list view."""
-
-    agent_id: UUID
-    agent_name: str
-    agent_description: str | None = None
-    active_controls_count: int = 0
-
-
-class ListAgentsResponse(BaseModel):
-    """Response for listing all agents."""
-
-    agents: list[AgentSummary]
-    pagination: "PaginationInfo"
 
 
 def _get_builtin_plugin_names() -> set[str]:
@@ -153,23 +140,21 @@ async def _validate_policy_controls_for_agent(
     "",
     response_model=ListAgentsResponse,
     summary="List all agents",
-    response_description="List of all registered agents with summary information",
+    response_description="Paginated list of agent summaries",
 )
 async def list_agents(
-    offset: int = _DEFAULT_PAGINATION_OFFSET,
+    cursor: str | None = None,
     limit: int = _DEFAULT_PAGINATION_LIMIT,
     db: AsyncSession = Depends(get_async_db),
 ) -> ListAgentsResponse:
     """
-    List all registered agents with summary information.
+    List all registered agents with cursor-based pagination.
 
-    Returns all agents including:
-    - Agent ID and name
-    - Description
-    - Count of active controls
+    Returns a summary of each agent including ID, name, policy assignment,
+    and counts of registered tools and evaluators.
 
     Args:
-        offset: Pagination offset (default 0)
+        cursor: Optional cursor for pagination (UUID of last agent from previous page)
         limit: Pagination limit (default 20, max 100)
         db: Database session (injected)
 
@@ -178,61 +163,110 @@ async def list_agents(
     """
     # Clamp limit
     limit = min(max(1, limit), _MAX_PAGINATION_LIMIT)
+
     # Get total count
-    count_result = await db.execute(select(func.count(Agent.agent_uuid)))
+    count_result = await db.execute(select(func.count()).select_from(Agent))
     total = count_result.scalar() or 0
 
-    # Query agents with pagination
-    query = (
-        select(Agent)
-        .order_by(Agent.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-    )
+    # Build query with cursor-based pagination
+    # Order by created_at DESC, then by UUID DESC for stable ordering
+    query = select(Agent).order_by(Agent.created_at.desc(), Agent.agent_uuid.desc())
+
+    # If cursor provided, filter to get items after the cursor
+    if cursor:
+        try:
+            cursor_uuid = UUID(cursor)
+            # Get the cursor agent to find its created_at timestamp
+            cursor_agent_result = await db.execute(
+                select(Agent).where(Agent.agent_uuid == cursor_uuid)
+            )
+            cursor_agent = cursor_agent_result.scalars().first()
+            if cursor_agent:
+                # Get agents created before this one (or same timestamp but smaller UUID)
+                query = query.where(
+                    (Agent.created_at < cursor_agent.created_at)
+                    | (
+                        (Agent.created_at == cursor_agent.created_at)
+                        & (Agent.agent_uuid < cursor_agent.agent_uuid)
+                    )
+                )
+        except ValueError:
+            # Invalid cursor UUID, ignore it and return first page
+            pass
+
+    # Fetch limit + 1 to check if there are more pages
+    query = query.limit(limit + 1)
     result = await db.execute(query)
     agents = result.scalars().all()
+
+    # Check if there are more pages
+    has_more = len(agents) > limit
+    if has_more:
+        agents = agents[:-1]  # Remove the extra item
+
+    # Determine next cursor (UUID of last agent in this page)
+    next_cursor: str | None = None
+    if has_more and agents:
+        next_cursor = str(agents[-1].agent_uuid)
 
     # Batch query: Get control counts for all agents at once
     # Join: Agent -> Policy -> ControlSets -> control_set_controls (junction table)
     # Group by agent_uuid and count distinct control IDs from junction table
-    control_counts_query = (
-        select(
-            Agent.agent_uuid,
-            func.count(func.distinct(control_set_controls.c.control_id)).label("count"),
+    control_counts_map: dict[UUID, int] = {}
+    if agents:
+        control_counts_query = (
+            select(
+                Agent.agent_uuid,
+                func.count(func.distinct(control_set_controls.c.control_id)).label("count"),
+            )
+            .outerjoin(Policy, Agent.policy_id == Policy.id)
+            .outerjoin(policy_control_sets, Policy.id == policy_control_sets.c.policy_id)
+            .outerjoin(ControlSet, policy_control_sets.c.control_set_id == ControlSet.id)
+            .outerjoin(control_set_controls, ControlSet.id == control_set_controls.c.control_set_id)
+            .where(Agent.agent_uuid.in_([agent.agent_uuid for agent in agents]))
+            .group_by(Agent.agent_uuid)
         )
-        .outerjoin(Policy, Agent.policy_id == Policy.id)
-        .outerjoin(policy_control_sets, Policy.id == policy_control_sets.c.policy_id)
-        .outerjoin(ControlSet, policy_control_sets.c.control_set_id == ControlSet.id)
-        .outerjoin(control_set_controls, ControlSet.id == control_set_controls.c.control_set_id)
-        .where(Agent.agent_uuid.in_([agent.agent_uuid for agent in agents]))
-        .group_by(Agent.agent_uuid)
-    )
-    control_counts_result = await db.execute(control_counts_query)
-    control_counts_map = {row[0]: row[1] for row in control_counts_result.all()}
+        control_counts_result = await db.execute(control_counts_query)
+        control_counts_map = {row[0]: row[1] for row in control_counts_result.all()}
 
-    agent_summaries = []
-
+    # Build summaries
+    summaries: list[AgentSummary] = []
     for agent in agents:
-        # Extract description directly from dict (avoid expensive Pydantic validation)
-        # agent.data is JSONB column, always a dict
-        agent_meta = agent.data.get("agent_metadata", {})
-        description = agent_meta.get("agent_description") if isinstance(agent_meta, dict) else None
+        tool_count = 0
+        evaluator_count = 0
+
+        # Parse agent data to get counts
+        try:
+            data_model = AgentData.model_validate(agent.data)
+            tool_count = len(data_model.tools or [])
+            evaluator_count = len(data_model.evaluators or [])
+        except Exception:
+            # If data is corrupted, just use zero counts
+            pass
 
         # Get active controls count from batched query result
         active_controls = control_counts_map.get(agent.agent_uuid, 0)
 
-        agent_summaries.append(
+        summaries.append(
             AgentSummary(
-                agent_id=agent.agent_uuid,
+                agent_id=str(agent.agent_uuid),
                 agent_name=agent.name,
-                agent_description=description,
+                policy_id=agent.policy_id,
+                created_at=agent.created_at.isoformat() if agent.created_at else None,
+                tool_count=tool_count,
+                evaluator_count=evaluator_count,
                 active_controls_count=active_controls,
             )
         )
 
     return ListAgentsResponse(
-        agents=agent_summaries,
-        pagination=PaginationInfo(offset=offset, limit=limit, total=total),
+        agents=summaries,
+        pagination=PaginationInfo(
+            limit=limit,
+            total=total,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        ),
     )
 
 
@@ -751,12 +785,6 @@ class EvaluatorSchemaItem(BaseModel):
     config_schema: dict[str, Any]
 
 
-class PaginationInfo(BaseModel):
-    """Pagination metadata."""
-
-    offset: int
-    limit: int
-    total: int
 
 
 class ListEvaluatorsResponse(BaseModel):
@@ -774,7 +802,7 @@ class ListEvaluatorsResponse(BaseModel):
 )
 async def list_agent_evaluators(
     agent_id: UUID,
-    offset: int = _DEFAULT_PAGINATION_OFFSET,
+    cursor: str | None = None,
     limit: int = _DEFAULT_PAGINATION_LIMIT,
     db: AsyncSession = Depends(get_async_db),
 ) -> ListEvaluatorsResponse:
@@ -787,7 +815,7 @@ async def list_agent_evaluators(
 
     Args:
         agent_id: UUID of the agent
-        offset: Pagination offset (default 0)
+        cursor: Optional cursor for pagination (name of last evaluator from previous page)
         limit: Pagination limit (default 20, max 100)
         db: Database session (injected)
 
@@ -815,8 +843,29 @@ async def list_agent_evaluators(
     all_evaluators = data_model.evaluators or []
     total = len(all_evaluators)
 
-    # Apply pagination
-    paginated = all_evaluators[offset : offset + limit]
+    # Apply cursor-based pagination
+    # For evaluators, we use name as cursor (simple string comparison)
+    start_idx = 0
+    if cursor:
+        # Find the index of the cursor evaluator
+        for idx, ev in enumerate(all_evaluators):
+            if ev.name == cursor:
+                start_idx = idx + 1
+                break
+
+    # Fetch limit + 1 to check if there are more pages
+    end_idx = start_idx + limit + 1
+    paginated = all_evaluators[start_idx:end_idx]
+
+    # Check if there are more pages
+    has_more = len(paginated) > limit
+    if has_more:
+        paginated = paginated[:-1]  # Remove the extra item
+
+    # Determine next cursor (name of last evaluator in this page)
+    next_cursor: str | None = None
+    if has_more and paginated:
+        next_cursor = paginated[-1].name
 
     return ListEvaluatorsResponse(
         evaluators=[
@@ -827,7 +876,12 @@ async def list_agent_evaluators(
             )
             for ev in paginated
         ],
-        pagination=PaginationInfo(offset=offset, limit=limit, total=total),
+        pagination=PaginationInfo(
+            limit=limit,
+            total=total,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        ),
     )
 
 

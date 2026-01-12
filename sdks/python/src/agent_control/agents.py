@@ -96,3 +96,45 @@ async def get_agent(
     response.raise_for_status()
     return cast(dict[str, Any], response.json())
 
+
+async def list_agents(
+    client: AgentControlClient,
+    cursor: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """
+    List all registered agents from the server.
+
+    Args:
+        client: AgentControlClient instance
+        cursor: Optional cursor for pagination (UUID of last agent from previous page)
+        limit: Number of results per page (default 20, max 100)
+
+    Returns:
+        Dictionary containing:
+            - agents: List of agent summaries with agent_id, agent_name,
+                      policy_id, created_at, tool_count, evaluator_count
+            - pagination: Object with limit, total, next_cursor, has_more
+
+    Raises:
+        httpx.HTTPError: If request fails
+
+    Example:
+        async with AgentControlClient() as client:
+            result = await list_agents(client, limit=10)
+            print(f"Total agents: {result['pagination']['total']}")
+            for agent in result['agents']:
+                print(f"  - {agent['agent_name']} ({agent['agent_id']})")
+            # Fetch next page if available
+            if result['pagination']['has_more']:
+                next_result = await list_agents(
+                    client, cursor=result['pagination']['next_cursor']
+                )
+    """
+    params: dict[str, Any] = {"limit": limit}
+    if cursor:
+        params["cursor"] = cursor
+    response = await client.http_client.get("/api/v1/agents", params=params)
+    response.raise_for_status()
+    return cast(dict[str, Any], response.json())
+

@@ -139,6 +139,16 @@ class CreateControlResponse(BaseModel):
     control_id: int = Field(description="Identifier of the created control")
 
 
+class GetControlResponse(BaseModel):
+    """Response containing control details."""
+
+    id: int = Field(..., description="Control ID")
+    name: str = Field(..., description="Control name")
+    data: ControlDefinition | None = Field(
+        None, description="Control configuration data (None if not yet configured)"
+    )
+
+
 class GetPolicyControlSetsResponse(BaseModel):
     control_set_ids: list[int] = Field(
         description="List of control set ids associated with the policy"
@@ -191,3 +201,35 @@ class PatchAgentResponse(BaseModel):
     evaluators_removed: list[str] = Field(
         default_factory=list, description="Evaluator names that were removed"
     )
+
+
+class AgentSummary(BaseModel):
+    """Summary of an agent for list responses."""
+
+    agent_id: str = Field(..., description="UUID of the agent")
+    agent_name: str = Field(..., description="Human-readable name of the agent")
+    policy_id: int | None = Field(None, description="ID of assigned policy, if any")
+    created_at: str | None = Field(None, description="ISO 8601 timestamp when agent was created")
+    tool_count: int = Field(0, description="Number of tools registered with the agent")
+    evaluator_count: int = Field(0, description="Number of evaluators registered with the agent")
+    active_controls_count: int = Field(
+        0, description="Number of active controls from agent's policy"
+    )
+
+
+class PaginationInfo(BaseModel):
+    """Pagination metadata for cursor-based pagination."""
+
+    limit: int = Field(..., description="Number of items per page")
+    total: int = Field(..., description="Total number of items")
+    next_cursor: str | None = Field(
+        None, description="Cursor for fetching the next page (null if no more pages)"
+    )
+    has_more: bool = Field(..., description="Whether there are more pages available")
+
+
+class ListAgentsResponse(BaseModel):
+    """Response for listing agents."""
+
+    agents: list[AgentSummary] = Field(..., description="List of agent summaries")
+    pagination: PaginationInfo = Field(..., description="Pagination metadata")

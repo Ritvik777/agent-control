@@ -131,3 +131,58 @@ def test_create_control_duplicate_name_409(client: TestClient) -> None:
     r2 = client.put("/api/v1/controls", json={"name": name})
     # Then: conflict
     assert r2.status_code == 409
+
+
+# =============================================================================
+# GET /controls/{id} Tests
+# =============================================================================
+
+
+def test_get_control_returns_metadata(client: TestClient) -> None:
+    """Test GET /controls/{id} returns control id, name, and data."""
+    # Given: a control with a specific name
+    name = f"test-control-{uuid.uuid4()}"
+    resp = client.put("/api/v1/controls", json={"name": name})
+    assert resp.status_code == 200
+    control_id = resp.json()["control_id"]
+
+    # When: fetching the control
+    get_resp = client.get(f"/api/v1/controls/{control_id}")
+
+    # Then: returns id, name, and data (None for unconfigured)
+    assert get_resp.status_code == 200
+    body = get_resp.json()
+    assert body["id"] == control_id
+    assert body["name"] == name
+    assert body["data"] is None  # Not configured yet
+
+
+def test_get_control_with_data(client: TestClient) -> None:
+    """Test GET /controls/{id} returns data when configured."""
+    # Given: a control with data set
+    control_id = create_control(client)
+    client.put(f"/api/v1/controls/{control_id}/data", json={"data": VALID_CONTROL_DATA})
+
+    # When: fetching the control
+    get_resp = client.get(f"/api/v1/controls/{control_id}")
+
+    # Then: returns the configured data
+    assert get_resp.status_code == 200
+    body = get_resp.json()
+    assert body["id"] == control_id
+    assert body["data"] is not None
+    assert body["data"]["description"] == VALID_CONTROL_DATA["description"]
+    assert body["data"]["applies_to"] == VALID_CONTROL_DATA["applies_to"]
+
+
+def test_get_control_not_found(client: TestClient) -> None:
+    """Test GET /controls/{id} returns 404 for non-existent control."""
+    # Given: a non-existent control id
+    missing_id = 99999999
+
+    # When: fetching the control
+    resp = client.get(f"/api/v1/controls/{missing_id}")
+
+    # Then: 404
+    assert resp.status_code == 404
+    assert "not found" in resp.json()["detail"]

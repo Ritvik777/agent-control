@@ -438,3 +438,149 @@ def test_init_agent_rejects_non_uuid_agent_id(client: TestClient) -> None:
     resp = client.post("/api/v1/agents/initAgent", json=payload)
     # Then: a 422 validation error is returned
     assert resp.status_code == 422
+
+
+# =============================================================================
+# List Agents Endpoint Tests
+# =============================================================================
+
+
+def test_list_agents_empty(client: TestClient) -> None:
+    """Test listing agents when none exist returns empty list."""
+    # When: listing agents with no agents created
+    resp = client.get("/api/v1/agents")
+    # Then: returns empty list with zero total
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["agents"] == []
+    assert body["pagination"]["total"] == 0
+    assert body["pagination"]["limit"] == 20
+    assert body["pagination"]["has_more"] is False
+    assert body["pagination"]["next_cursor"] is None
+
+
+def test_list_agents_returns_created_agents(client: TestClient) -> None:
+    """Test listing agents returns created agents with correct summaries."""
+    # Given: two agents with different tools/evaluators
+    agent1_id = str(uuid.uuid4())
+    payload1 = make_agent_payload(agent_id=agent1_id, name="Agent One")
+    payload1["evaluators"] = [
+        {"name": "eval-1", "description": "Test", "config_schema": {}},
+    ]
+    r1 = client.post("/api/v1/agents/initAgent", json=payload1)
+    assert r1.status_code == 200
+
+    agent2_id = str(uuid.uuid4())
+    payload2 = make_agent_payload(agent_id=agent2_id, name="Agent Two")
+    payload2["tools"] = [
+        {"tool_name": "tool_x", "arguments": {}, "output_schema": {}},
+        {"tool_name": "tool_y", "arguments": {}, "output_schema": {}},
+    ]
+    r2 = client.post("/api/v1/agents/initAgent", json=payload2)
+    assert r2.status_code == 200
+
+    # When: listing agents
+    resp = client.get("/api/v1/agents")
+    # Then: both agents are returned
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["pagination"]["total"] == 2
+    assert len(body["agents"]) == 2
+
+    # Verify agent summaries contain correct data
+    agent_map = {a["agent_id"]: a for a in body["agents"]}
+
+    assert agent1_id in agent_map
+    agent1 = agent_map[agent1_id]
+    assert agent1["agent_name"] == "Agent One"
+    assert agent1["tool_count"] == 1  # from make_agent_payload
+    assert agent1["evaluator_count"] == 1
+    assert agent1["policy_id"] is None
+
+    assert agent2_id in agent_map
+    agent2 = agent_map[agent2_id]
+    assert agent2["agent_name"] == "Agent Two"
+    assert agent2["tool_count"] == 2
+    assert agent2["evaluator_count"] == 0
+    assert agent2["policy_id"] is None
+
+
+def test_list_agents_with_policy(client: TestClient) -> None:
+    """Test that list agents shows policy_id when assigned."""
+    # Given: an agent with a policy assigned
+    payload = make_agent_payload()
+    client.post("/api/v1/agents/initAgent", json=payload)
+    agent_id = payload["agent"]["agent_id"]
+
+    policy_id = _create_policy(client)
+    client.post(f"/api/v1/agents/{agent_id}/policy/{policy_id}")
+
+    # When: listing agents
+    resp = client.get("/api/v1/agents")
+    # Then: the agent shows the policy_id
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["agents"]) == 1
+    assert body["agents"][0]["policy_id"] == policy_id
+
+
+def test_list_agents_pagination(client: TestClient) -> None:
+    """Test cursor-based pagination works correctly."""
+    # Given: 5 agents
+    agent_ids = []
+    for i in range(5):
+        agent_id = str(uuid.uuid4())
+        agent_ids.append(agent_id)
+        payload = make_agent_payload(agent_id=agent_id, name=f"Agent {i}")
+        r = client.post("/api/v1/agents/initAgent", json=payload)
+        assert r.status_code == 200
+
+    # When: requesting first page with limit=2
+    resp = client.get("/api/v1/agents?limit=2")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["pagination"]["total"] == 5
+    assert len(body["agents"]) == 2
+    assert body["pagination"]["limit"] == 2
+    assert body["pagination"]["has_more"] is True
+    assert body["pagination"]["next_cursor"] is not None
+
+    # When: requesting next page using cursor
+    cursor = body["pagination"]["next_cursor"]
+    resp2 = client.get(f"/api/v1/agents?limit=2&cursor={cursor}")
+    assert resp2.status_code == 200
+    body2 = resp2.json()
+    assert body2["pagination"]["total"] == 5
+    assert len(body2["agents"]) == 2
+    assert body2["pagination"]["has_more"] is True
+
+    # When: requesting third page (should have 1 agent left)
+    cursor2 = body2["pagination"]["next_cursor"]
+    resp3 = client.get(f"/api/v1/agents?limit=2&cursor={cursor2}")
+    assert resp3.status_code == 200
+    body3 = resp3.json()
+    assert body3["pagination"]["total"] == 5
+    assert len(body3["agents"]) == 1
+    assert body3["pagination"]["has_more"] is False
+    assert body3["pagination"]["next_cursor"] is None
+
+
+def test_list_agents_limit_clamping(client: TestClient) -> None:
+    """Test that limit is clamped to valid range."""
+    # Given: one agent
+    payload = make_agent_payload()
+    client.post("/api/v1/agents/initAgent", json=payload)
+
+    # When: requesting with limit > 100
+    resp = client.get("/api/v1/agents?limit=200")
+    assert resp.status_code == 200
+    body = resp.json()
+    # Then: limit is clamped to 100
+    assert body["pagination"]["limit"] == 100
+
+    # When: requesting with limit < 1
+    resp2 = client.get("/api/v1/agents?limit=0")
+    assert resp2.status_code == 200
+    body2 = resp2.json()
+    # Then: limit is clamped to 1
+    assert body2["pagination"]["limit"] == 1
