@@ -25,8 +25,8 @@ from .plugin import (
     PluginEvaluator,
     PluginMetadata,
     clear_plugins,
+    get_all_plugins,
     get_plugin,
-    list_plugins,
     register_plugin,
 )
 from .policy import Policy
@@ -75,7 +75,7 @@ __all__ = [
     "PluginMetadata",
     "register_plugin",
     "get_plugin",
-    "list_plugins",
+    "get_all_plugins",
     "clear_plugins",
     # Server models
     "AgentSummary",

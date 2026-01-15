@@ -3,6 +3,8 @@
 from typing import Any, cast
 from uuid import UUID
 
+from agent_control_engine import ensure_plugins_discovered
+
 from .client import AgentControlClient
 
 # Import models if available
@@ -38,6 +40,9 @@ async def register_agent(
             response = await register_agent(client, agent, tools=[...])
             print(f"Created: {response['created']}")
     """
+    # Ensure plugins are discovered for local evaluation support
+    ensure_plugins_discovered()
+
     if tools is None:
         tools = []
 

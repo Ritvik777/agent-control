@@ -4,9 +4,8 @@ Tests plugin registration, discovery, and base functionality without
 requiring actual plugin implementations or external services.
 
 New architecture: Plugins take config at __init__, evaluate() only takes data.
+Registry is now in agent_control_models, discovery in agent_control_engine.
 """
-
-import os
 
 import pytest
 from unittest.mock import MagicMock, patch
@@ -16,10 +15,12 @@ from pydantic import BaseModel
 from agent_control.plugins import (
     PluginEvaluator,
     PluginMetadata,
-    get_plugin,
+    discover_plugins,
     list_plugins,
     register_plugin,
 )
+from agent_control_models import clear_plugins
+from agent_control_engine.discovery import reset_discovery
 from agent_control_models.controls import EvaluatorResult
 
 
@@ -94,13 +95,11 @@ class TestPluginRegistry:
 
     def setup_method(self):
         """Clear registry before each test."""
-        from agent_control.plugins import registry
-
-        # Clear any previously registered test plugins
-        if "test-mock-plugin" in registry._PLUGIN_REGISTRY:
-            del registry._PLUGIN_REGISTRY["test-mock-plugin"]
-        # Reset discovery state for clean tests
-        registry._DISCOVERY_COMPLETE = True  # Prevent auto-discovery during tests
+        # Clear all plugins and reset discovery
+        clear_plugins()
+        reset_discovery()
+        # Run discovery to load built-in plugins
+        discover_plugins()
 
     def test_register_plugin(self):
         """Test registering a plugin."""
@@ -108,12 +107,12 @@ class TestPluginRegistry:
         register_plugin(MockPlugin)
 
         # Verify it's registered
-        plugin_class = get_plugin("test-mock-plugin")
+        plugin_class = list_plugins().get("test-mock-plugin")
         assert plugin_class is MockPlugin
 
     def test_get_nonexistent_plugin(self):
         """Test getting a plugin that doesn't exist."""
-        plugin_class = get_plugin("nonexistent-plugin-xyz")
+        plugin_class = list_plugins().get("nonexistent-plugin-xyz")
         assert plugin_class is None
 
     def test_list_plugins_includes_registered(self):
@@ -121,26 +120,46 @@ class TestPluginRegistry:
         # Register mock plugin
         register_plugin(MockPlugin)
 
-        # List plugins
+        # List plugins - now returns dict of plugin classes
         plugins = list_plugins()
 
         assert "test-mock-plugin" in plugins
-        assert plugins["test-mock-plugin"]["name"] == "test-mock-plugin"
-        assert plugins["test-mock-plugin"]["version"] == "1.0.0"
-        assert plugins["test-mock-plugin"]["description"] == "Mock plugin for testing"
+        assert plugins["test-mock-plugin"] is MockPlugin
+
+    def test_builtin_plugins_available(self):
+        """Test that built-in plugins are available after discovery."""
+        plugins = list_plugins()
+
+        assert "regex" in plugins
+        assert "list" in plugins
 
     def test_register_duplicate_plugin_raises_error(self):
-        """Test that registering a plugin twice raises ValueError."""
-        # Ensure plugin is registered first
-        try:
-            register_plugin(MockPlugin)
-        except ValueError:
-            # Already registered from previous test, that's fine
-            pass
+        """Test that registering a different plugin with same name raises ValueError."""
+        # Register plugin first
+        register_plugin(MockPlugin)
 
-        # Second registration should fail
+        # Create a different class with the same plugin name
+        class DuplicatePlugin(PluginEvaluator):
+            metadata = PluginMetadata(
+                name="test-mock-plugin",  # Same name as MockPlugin
+                version="2.0.0",
+                description="Duplicate plugin",
+            )
+            config_model = MockConfig
+
+            def evaluate(self, data) -> EvaluatorResult:
+                return EvaluatorResult(matched=False, confidence=1.0, message="duplicate")
+
+        # Second registration with different class should fail
         with pytest.raises(ValueError, match="already registered"):
-            register_plugin(MockPlugin)
+            register_plugin(DuplicatePlugin)
+
+    def test_re_register_same_plugin_allowed(self):
+        """Test that re-registering the same class is allowed (hot reload support)."""
+        register_plugin(MockPlugin)
+        # Should not raise - same class can be re-registered
+        result = register_plugin(MockPlugin)
+        assert result is MockPlugin
 
 
 class TestPluginEvaluator:
@@ -198,61 +217,27 @@ class TestPluginDiscovery:
 
     def setup_method(self):
         """Reset discovery state before each test."""
-        from agent_control.plugins import registry
+        clear_plugins()
+        reset_discovery()
 
-        registry._DISCOVERY_COMPLETE = False
-        # Clear test plugins
-        if "test-mock-plugin" in registry._PLUGIN_REGISTRY:
-            del registry._PLUGIN_REGISTRY["test-mock-plugin"]
-
-    @patch("agent_control.plugins.registry._load_luna2_plugin")
-    @patch("agent_control.plugins.registry._load_entry_point_plugins")
-    def test_discover_plugins_calls_loaders(self, mock_entry_points, mock_luna2):
-        """Test that discover_plugins calls all loader functions."""
-        from agent_control.plugins.registry import discover_plugins
-
+    def test_discover_plugins_loads_builtins(self):
+        """Test that discover_plugins loads built-in plugins."""
         discover_plugins()
 
-        mock_luna2.assert_called_once()
-        mock_entry_points.assert_called_once()
+        plugins = list_plugins()
+        assert "regex" in plugins
+        assert "list" in plugins
 
-    @patch("agent_control.plugins.registry._load_luna2_plugin")
-    @patch("agent_control.plugins.registry._load_entry_point_plugins")
-    def test_lazy_discovery_on_get_plugin(self, mock_entry_points, mock_luna2):
-        """Test that get_plugin triggers lazy discovery."""
-        from agent_control.plugins import registry
-        from agent_control.plugins.registry import get_plugin
+    def test_discover_plugins_only_runs_once(self):
+        """Test that discovery only runs once."""
+        count1 = discover_plugins()
+        count2 = discover_plugins()
 
-        registry._DISCOVERY_COMPLETE = False
-        get_plugin("some-plugin")
+        # Second call should return 0 (already discovered)
+        assert count2 == 0
 
-        mock_luna2.assert_called_once()
-        mock_entry_points.assert_called_once()
-
-    @patch.dict(os.environ, {"AGENT_CONTROL_DISABLE_PLUGIN_DISCOVERY": "1"})
-    @patch("agent_control.plugins.registry._load_luna2_plugin")
-    def test_discovery_disabled_via_env(self, mock_luna2):
-        """Test that discovery can be disabled via environment variable."""
-        from agent_control.plugins import registry
-        from agent_control.plugins.registry import discover_plugins
-
-        registry._DISCOVERY_COMPLETE = False
-        discover_plugins()
-
-        mock_luna2.assert_not_called()
-
-    def test_load_luna2_plugin_handles_import_error(self):
-        """Test that Luna-2 plugin load handles ImportError gracefully."""
-        from agent_control.plugins.registry import _load_luna2_plugin
-
-        # Should not raise an exception
-        try:
-            _load_luna2_plugin()
-        except Exception as e:
-            pytest.fail(f"Luna-2 loader should handle errors gracefully: {e}")
-
-    @patch("importlib.metadata.entry_points")
-    def test_load_entry_point_plugins(self, mock_entry_points):
+    @patch("agent_control_engine.discovery.entry_points")
+    def test_discover_plugins_loads_entry_points(self, mock_entry_points):
         """Test loading plugins via entry points."""
         mock_ep = MagicMock()
         mock_ep.name = "custom-plugin"
@@ -260,8 +245,16 @@ class TestPluginDiscovery:
 
         mock_entry_points.return_value = [mock_ep]
 
-        from agent_control.plugins.registry import _load_entry_point_plugins
+        discover_plugins()
 
-        _load_entry_point_plugins()
+        mock_entry_points.assert_called_with(group="agent_control.plugins")
 
-        mock_ep.load.assert_called_once()
+    def test_ensure_plugins_discovered_triggers_discovery(self):
+        """Test that ensure_plugins_discovered triggers discovery."""
+        from agent_control.plugins import ensure_plugins_discovered
+
+        ensure_plugins_discovered()
+
+        plugins = list_plugins()
+        assert "regex" in plugins
+        assert "list" in plugins

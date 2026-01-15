@@ -1,9 +1,9 @@
 """Tests for unified evaluator factory."""
 
 import pytest
+from agent_control_engine import list_plugins
 from agent_control_engine.evaluators import (
     clear_evaluator_cache,
-    get_available_plugins,
     get_evaluator,
 )
 from agent_control_models import (
@@ -178,10 +178,10 @@ class TestGetEvaluator:
         with pytest.raises(ValueError, match="not found"):
             get_evaluator(config)
 
-    def test_get_available_plugins(self):
+    def test_list_plugins(self):
         """Test listing available plugins."""
         # Given/When: Getting available plugins
-        plugins = get_available_plugins()
+        plugins = list_plugins()
 
         # Then: Should include built-in plugins
         assert "regex" in plugins

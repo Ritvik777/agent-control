@@ -1,4 +1,5 @@
-from agent_control_models import ControlDefinition, get_plugin
+from agent_control_engine import list_plugins
+from agent_control_models import ControlDefinition
 from agent_control_models.server import (
     ControlSummary,
     CreateControlRequest,
@@ -267,7 +268,7 @@ async def set_control_data(
                 )
     else:
         # Built-in or server-side plugin: validate if registered
-        plugin_cls = get_plugin(eval_name)
+        plugin_cls = list_plugins().get(eval_name)
         if plugin_cls is not None:
             try:
                 plugin_cls.config_model(**request.data.evaluator.config)

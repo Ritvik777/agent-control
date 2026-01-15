@@ -4,10 +4,11 @@ This module provides a plugin architecture for extending agent_control
 with external evaluation systems like Galileo Luna-2, Guardrails AI, etc.
 
 Plugin Discovery:
-    Plugins are discovered lazily on first use of `get_plugin()` or `list_plugins()`.
-    To disable auto-discovery, set: AGENT_CONTROL_DISABLE_PLUGIN_DISCOVERY=1
+    Call `discover_plugins()` at startup to load plugins. This loads:
+    - Built-in plugins (regex, list) from agent_control_plugins
+    - Third-party plugins via the 'agent_control.plugins' entry point group
 
-    For explicit control, call `discover_plugins()` manually.
+    Then use `list_plugins()` to get available plugins.
 
 Luna-2 Plugin:
     When installed with luna2 extras, the Luna-2 types are available:
@@ -16,14 +17,20 @@ Luna-2 Plugin:
     ```
 """
 
+from agent_control_engine import (
+    discover_plugins,
+    ensure_plugins_discovered,
+    list_plugins,
+)
+from agent_control_models import register_plugin
+
 from .base import PluginEvaluator, PluginMetadata
-from .registry import discover_plugins, get_plugin, list_plugins, register_plugin
 
 __all__ = [
     "PluginEvaluator",
     "PluginMetadata",
     "discover_plugins",
-    "get_plugin",
+    "ensure_plugins_discovered",
     "list_plugins",
     "register_plugin",
 ]

@@ -11,6 +11,7 @@ _logger = logging.getLogger(__name__)
 
 # Import models if available
 try:
+    from agent_control_engine import list_plugins
     from agent_control_engine.core import ControlEngine
     from agent_control_models import (
         ControlDefinition,
@@ -21,7 +22,6 @@ try:
         EvaluatorResult,
         LlmCall,
         ToolCall,
-        get_plugin,
     )
 
     MODELS_AVAILABLE = True
@@ -261,7 +261,7 @@ async def check_evaluation_with_local(
                     f"agent-scoped evaluator '{plugin_name}' which is server-only. "
                     f"Set local=False or use a built-in plugin."
                 )
-            if get_plugin(plugin_name) is None:
+            if plugin_name not in list_plugins():
                 raise RuntimeError(
                     f"Control '{c['name']}' is marked local=True but plugin "
                     f"'{plugin_name}' is not available in the SDK. "

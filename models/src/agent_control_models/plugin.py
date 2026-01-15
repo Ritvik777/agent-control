@@ -140,6 +140,18 @@ class PluginEvaluator(ABC, Generic[ConfigT]):  # noqa: UP046
         timeout_ms: int = getattr(self.config, "timeout_ms", self.metadata.timeout_ms)
         return float(timeout_ms) / 1000.0
 
+    @classmethod
+    def is_available(cls) -> bool:
+        """Check if plugin dependencies are satisfied.
+
+        Override this method for plugins with optional dependencies.
+        Return False to skip registration during discovery.
+
+        Returns:
+            True if plugin can be used, False otherwise
+        """
+        return True
+
 
 # =============================================================================
 # Plugin Registry
@@ -153,7 +165,9 @@ def register_plugin(
 ) -> type[PluginEvaluator[Any]]:
     """Register a plugin class by its metadata name.
 
-    Can be used as a decorator or called directly.
+    Can be used as a decorator or called directly. Respects the plugin's
+    is_available() method - plugins with unavailable dependencies are
+    silently skipped.
 
     Args:
         plugin_class: Plugin class to register
@@ -165,6 +179,12 @@ def register_plugin(
         ValueError: If plugin name already registered
     """
     name = plugin_class.metadata.name
+
+    # Check if plugin dependencies are satisfied
+    if not plugin_class.is_available():
+        logger.debug(f"Plugin '{name}' not available (is_available=False), skipping")
+        return plugin_class
+
     if name in _PLUGIN_REGISTRY:
         # Allow re-registration of same class (e.g., during hot reload)
         if _PLUGIN_REGISTRY[name] is plugin_class:
@@ -177,19 +197,19 @@ def register_plugin(
 
 
 def get_plugin(name: str) -> type[PluginEvaluator[Any]] | None:
-    """Get a plugin class by name.
+    """Get a registered plugin by name.
 
     Args:
-        name: Plugin name (e.g., "regex", "galileo-luna2")
+        name: Plugin name to look up
 
     Returns:
-        Plugin class or None if not found
+        Plugin class if found, None otherwise
     """
     return _PLUGIN_REGISTRY.get(name)
 
 
-def list_plugins() -> dict[str, type[PluginEvaluator[Any]]]:
-    """List all registered plugins.
+def get_all_plugins() -> dict[str, type[PluginEvaluator[Any]]]:
+    """Get all registered plugins.
 
     Returns:
         Dictionary mapping plugin names to plugin classes

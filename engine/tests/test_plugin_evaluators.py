@@ -163,8 +163,8 @@ class TestBuiltInPlugins:
     def test_regex_plugin_registered(self):
         """Test regex plugin is registered."""
         # Given/When: Getting regex plugin
-        from agent_control_models import get_plugin
-        plugin = get_plugin("regex")
+        from agent_control_engine import list_plugins
+        plugin = list_plugins().get("regex")
 
         # Then: Should be registered with correct name
         assert plugin is not None
@@ -173,8 +173,8 @@ class TestBuiltInPlugins:
     def test_list_plugin_registered(self):
         """Test list plugin is registered."""
         # Given/When: Getting list plugin
-        from agent_control_models import get_plugin
-        plugin = get_plugin("list")
+        from agent_control_engine import list_plugins
+        plugin = list_plugins().get("list")
 
         # Then: Should be registered with correct name
         assert plugin is not None

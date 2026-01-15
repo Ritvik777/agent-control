@@ -1,10 +1,12 @@
 """Main server application entry point."""
 
+import logging
 import traceback
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import uvicorn
+from agent_control_engine import discover_plugins, list_plugins
 from agent_control_models import HealthResponse
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +21,8 @@ from .endpoints.plugins import router as plugin_router
 from .endpoints.policies import router as policy_router
 from .logging_utils import configure_logging
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -26,6 +30,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup: Configure logging
     log_level = "DEBUG" if settings.debug else "INFO"
     configure_logging(level=log_level)
+
+    # Discover plugins at startup
+    discover_plugins()
+    available = list(list_plugins().keys())
+    logger.info(f"Plugin discovery complete. Available plugins: {available}")
 
     yield
 

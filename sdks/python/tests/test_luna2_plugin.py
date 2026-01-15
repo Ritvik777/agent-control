@@ -285,19 +285,20 @@ class TestLuna2PluginImport:
         assert Luna2Plugin.metadata.version == "2.0.0"
 
     @patch("agent_control_plugins.luna2.plugin.LUNA2_AVAILABLE", False)
-    def test_luna2_plugin_init_without_httpx_raises_error(self):
-        """Test that initializing without httpx raises ImportError."""
+    def test_luna2_plugin_is_available_false_without_httpx(self):
+        """Test that is_available() returns False when httpx is not installed."""
         from agent_control_plugins.luna2 import Luna2Plugin
 
-        config = {
-            "stage_type": "local",
-            "metric": "input_toxicity",
-            "operator": "gt",
-            "target_value": "0.5",
-        }
+        # When httpx is not available, is_available() should return False
+        assert Luna2Plugin.is_available() is False
 
-        with pytest.raises(ImportError, match="httpx"):
-            Luna2Plugin.from_dict(config)
+    @patch("agent_control_plugins.luna2.plugin.LUNA2_AVAILABLE", True)
+    def test_luna2_plugin_is_available_true_with_httpx(self):
+        """Test that is_available() returns True when httpx is installed."""
+        from agent_control_plugins.luna2 import Luna2Plugin
+
+        # When httpx is available, is_available() should return True
+        assert Luna2Plugin.is_available() is True
 
     @patch("agent_control_plugins.luna2.plugin.LUNA2_AVAILABLE", True)
     @patch.dict(os.environ, {}, clear=True)

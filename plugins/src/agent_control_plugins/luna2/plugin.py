@@ -44,15 +44,7 @@ except ImportError:
     Ruleset = None  # type: ignore
 
 
-# Only register if dependencies are available
-def _maybe_register(cls: type) -> type:
-    """Conditionally register plugin if dependencies available."""
-    if LUNA2_AVAILABLE:
-        return register_plugin(cls)
-    return cls
-
-
-@_maybe_register
+@register_plugin
 class Luna2Plugin(PluginEvaluator[Luna2Config]):
     """Galileo Luna-2 runtime protection plugin.
 
@@ -103,6 +95,11 @@ class Luna2Plugin(PluginEvaluator[Luna2Config]):
     )
     config_model = Luna2Config
 
+    @classmethod
+    def is_available(cls) -> bool:
+        """Check if httpx dependency is installed."""
+        return LUNA2_AVAILABLE
+
     def __init__(self, config: Luna2Config) -> None:
         """Initialize Luna-2 plugin with configuration.
 
@@ -110,16 +107,8 @@ class Luna2Plugin(PluginEvaluator[Luna2Config]):
             config: Validated Luna2Config instance.
 
         Raises:
-            ImportError: If httpx is not installed.
             ValueError: If GALILEO_API_KEY is not set.
         """
-        if not LUNA2_AVAILABLE:
-            raise ImportError(
-                "Luna-2 plugin requires httpx.\n"
-                "Install with: pip install agent-control-plugins[luna2]\n"
-                "Or: pip install httpx>=0.24.0"
-            )
-
         # Verify API key is configured
         if not os.getenv("GALILEO_API_KEY"):
             raise ValueError(

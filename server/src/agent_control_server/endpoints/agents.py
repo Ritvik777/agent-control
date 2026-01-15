@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from agent_control_models import list_plugins
+from agent_control_engine import list_plugins
 from agent_control_models.agent import Agent as APIAgent
 from agent_control_models.agent import AgentTool
 from agent_control_models.server import (

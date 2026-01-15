@@ -2,9 +2,7 @@
 
 from typing import Any
 
-# Import plugins to ensure they are registered
-import agent_control_plugins  # noqa: F401
-from agent_control_models import list_plugins
+from agent_control_engine import list_plugins
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 

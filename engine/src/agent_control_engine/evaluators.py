@@ -6,9 +6,9 @@ import os
 from collections import OrderedDict
 from typing import Any
 
-# Import plugins to ensure they are registered
-import agent_control_plugins  # noqa: F401
-from agent_control_models import EvaluatorConfig, PluginEvaluator, get_plugin
+from agent_control_models import EvaluatorConfig, PluginEvaluator
+
+from .discovery import list_plugins
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +73,13 @@ def get_evaluator(evaluator_config: EvaluatorConfig) -> PluginEvaluator[Any]:
         return _EVALUATOR_CACHE[cache_key]
 
     # Cache miss - create new instance
-    plugin_cls = get_plugin(evaluator_config.plugin)
+    plugins = list_plugins()
+    plugin_cls = plugins.get(evaluator_config.plugin)
 
     if plugin_cls is None:
         raise ValueError(
             f"Plugin '{evaluator_config.plugin}' not found. "
-            f"Available plugins: {', '.join(get_available_plugins())}"
+            f"Available plugins: {', '.join(plugins.keys())}"
         )
 
     logger.debug(f"Cache miss, creating evaluator: {evaluator_config.plugin}")
@@ -97,10 +98,3 @@ def get_evaluator(evaluator_config: EvaluatorConfig) -> PluginEvaluator[Any]:
 def clear_evaluator_cache() -> None:
     """Clear all cached evaluator instances. Useful for testing."""
     _EVALUATOR_CACHE.clear()
-
-
-def get_available_plugins() -> list[str]:
-    """Get list of available plugin names."""
-    from agent_control_models import list_plugins
-
-    return list(list_plugins().keys())
