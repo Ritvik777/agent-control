@@ -130,7 +130,7 @@ async def create_regex_control(client: AgentControlClient) -> int:
         "check_stage": "post",  # Check AFTER function execution (output)
         "selector": {"path": "output"},
         "evaluator": {
-            "type": "regex",
+            "plugin": "regex",
             "config": {
                 "pattern": r"\b\d{3}-\d{2}-\d{4}\b",  # SSN pattern
                 "flags": []
@@ -162,7 +162,7 @@ async def create_list_control(client: AgentControlClient) -> int:
         "check_stage": "pre",  # Check BEFORE function execution (input)
         "selector": {"path": "input"},
         "evaluator": {
-            "type": "list",
+            "plugin": "list",
             "config": {
                 "values": ["DROP", "DELETE", "TRUNCATE", "ALTER", "GRANT"],
                 "logic": "any",  # Block if ANY keyword is found
@@ -351,7 +351,7 @@ async def update_control(client: AgentControlClient, control_id: int) -> None:
         "check_stage": "pre",
         "selector": {"path": "input"},
         "evaluator": {
-            "type": "list",
+            "plugin": "list",
             "config": {
                 "values": [
                     "DROP", "DELETE", "TRUNCATE", "ALTER", "GRANT",

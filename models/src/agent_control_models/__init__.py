@@ -13,6 +13,7 @@ from .controls import (
     JSONControlEvaluatorPluginConfig,
     ListConfig,
     RegexConfig,
+    SQLControlEvaluatorPluginConfig,
 )
 from .evaluation import (
     EvaluationRequest,
@@ -68,6 +69,7 @@ __all__ = [
     "JSONControlEvaluatorPluginConfig",
     "ListConfig",
     "RegexConfig",
+    "SQLControlEvaluatorPluginConfig",
     # Plugin system
     "PluginEvaluator",
     "PluginMetadata",

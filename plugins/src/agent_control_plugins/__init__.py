@@ -15,7 +15,7 @@ Their schemas are registered via initAgent for validation purposes.
 from agent_control_models import PluginEvaluator, PluginMetadata, register_plugin
 
 # Import built-in plugins to auto-register them
-from .builtin import ListPlugin, RegexPlugin
+from .builtin import ListPlugin, RegexPlugin, SQLControlEvaluatorPlugin
 
 __version__ = "0.1.0"
 
@@ -25,5 +25,6 @@ __all__ = [
     "register_plugin",
     "RegexPlugin",
     "ListPlugin",
+    "SQLControlEvaluatorPlugin",
 ]
 

@@ -1,5 +1,6 @@
 """Control definition models for agent protection."""
 
+import warnings
 from typing import Any, Literal, Self
 
 import re2
@@ -371,6 +372,299 @@ class JSONControlEvaluatorPluginConfig(BaseModel):
         return self
 
 
+class SQLControlEvaluatorPluginConfig(BaseModel):
+    """Configuration for comprehensive SQL control plugin.
+
+    Validates SQL query strings using AST-based analysis via sqlglot.
+    Controls are evaluated in order:
+    syntax → multi-statement → operations → tables/schemas → columns → limits.
+    """
+
+    # Multi-Statement
+    allow_multi_statements: bool = Field(
+        default=True,
+        description=(
+            "Whether to allow multiple SQL statements in a single query. "
+            "Set to False to prevent queries like 'SELECT x; DROP TABLE y' "
+            "(SQL injection prevention). "
+            "When False, queries with multiple statements are blocked. "
+            "Cannot be used with max_statements (use one or the other)."
+        ),
+    )
+    max_statements: int | None = Field(
+        default=None,
+        description=(
+            "Maximum number of statements allowed (e.g., 2 allows up to 2 statements). "
+            "Only applicable when allow_multi_statements=True. "
+            "Must be a positive integer. "
+            "Use this to allow controlled multi-statement queries while preventing abuse."
+        ),
+    )
+
+    # Operations
+    blocked_operations: list[str] | None = Field(
+        default=None,
+        description=(
+            "SQL operations to block (e.g., ['DROP', 'DELETE', 'TRUNCATE']). "
+            "Cannot be used with allowed_operations. "
+            "Use this for blocklist mode where most operations are allowed except specific ones."
+        ),
+    )
+    allowed_operations: list[str] | None = Field(
+        default=None,
+        description=(
+            "SQL operations to allow (e.g., ['SELECT'] for read-only). "
+            "Cannot be used with blocked_operations. "
+            "When set, all operations NOT in this list are blocked (allowlist mode). "
+            "Can be combined with block_ddl/block_dcl for stricter control "
+            "(e.g., allowed_operations=['SELECT'] + block_ddl=True enforces both)."
+        ),
+    )
+    block_ddl: bool = Field(
+        default=False,
+        description=(
+            "Block all DDL operations (CREATE, ALTER, DROP, TRUNCATE, RENAME, COMMENT). "
+            "Adds DDL operations to the blocklist. "
+            "Can be combined with either blocked_operations or allowed_operations (but not both, "
+            "since those are mutually exclusive). "
+            "Example: allowed_operations=['SELECT'] + block_ddl=True = read-only with DDL blocked."
+        ),
+    )
+    block_dcl: bool = Field(
+        default=False,
+        description=(
+            "Block all DCL operations (GRANT, REVOKE). "
+            "Adds DCL operations to the blocklist. "
+            "Can be combined with either blocked_operations or allowed_operations (but not both, "
+            "since those are mutually exclusive). "
+            "Useful for preventing privilege escalation even with allowed operations."
+        ),
+    )
+
+    # Table/Schema Access
+    allowed_tables: list[str] | None = Field(
+        default=None,
+        description=(
+            "Table names allowed (e.g., ['users', 'orders']). "
+            "Cannot be used with blocked_tables. "
+            "When set, all tables NOT in this list are blocked (allowlist mode). "
+            "Case sensitivity controlled by case_sensitive field."
+        ),
+    )
+    blocked_tables: list[str] | None = Field(
+        default=None,
+        description=(
+            "Table names to block (e.g., ['sensitive_data', 'admin_users']). "
+            "Cannot be used with allowed_tables. "
+            "Use this for blocklist mode where most tables are allowed except specific ones. "
+            "Case sensitivity controlled by case_sensitive field."
+        ),
+    )
+    allowed_schemas: list[str] | None = Field(
+        default=None,
+        description=(
+            "Schema names allowed (e.g., ['public', 'analytics']). "
+            "Cannot be used with blocked_schemas. "
+            "When set, all schemas NOT in this list are blocked (allowlist mode). "
+            "Case sensitivity controlled by case_sensitive field."
+        ),
+    )
+    blocked_schemas: list[str] | None = Field(
+        default=None,
+        description=(
+            "Schema names to block (e.g., ['system', 'admin', 'internal']). "
+            "Cannot be used with allowed_schemas. "
+            "Use this for blocklist mode where most schemas are allowed except specific ones. "
+            "Case sensitivity controlled by case_sensitive field."
+        ),
+    )
+
+    # Column Presence
+    required_columns: list[str] | None = Field(
+        default=None,
+        description=(
+            "Columns that must be present in the query "
+            "(e.g., ['tenant_id'] for multi-tenant security). "
+            "Use with column_presence_logic to control 'any' vs 'all' matching. "
+            "Use with column_context to restrict where columns must appear "
+            "(WHERE, SELECT, or anywhere). "
+            "Case sensitivity controlled by case_sensitive field."
+        ),
+    )
+    column_presence_logic: Literal["any", "all"] = Field(
+        default="any",
+        description=(
+            "Matching logic for required_columns. "
+            "'any': at least one required column must be present (OR logic). "
+            "'all': all required columns must be present (AND logic). "
+            "Only applicable when required_columns is set."
+        ),
+    )
+    column_context: Literal["select", "where"] | None = Field(
+        default=None,
+        description=(
+            "Where required columns must appear. "
+            "'select': columns must appear in SELECT clause. "
+            "'where': columns must appear in WHERE clause (common for tenant_id filtering). "
+            "None: columns can appear anywhere in the query. "
+            "Only applicable when required_columns is set."
+        ),
+    )
+    column_context_scope: Literal["top_level", "all"] = Field(
+        default="all",
+        description=(
+            "Scope for column_context checking when set to 'where' or 'select'. "
+            "top_level: Only check columns in the top-level WHERE/SELECT clause "
+            "(recommended for multi-tenant RLS security). "
+            "all: Check columns in all WHERE/SELECT clauses including subqueries "
+            "(default for backward compatibility). "
+            "Only applies when column_context is 'where' or 'select'. "
+            "For multi-tenant security, use column_context='where' with "
+            "column_context_scope='top_level' to ensure tenant filtering is in "
+            "the outer query, not just subqueries."
+        ),
+    )
+
+    # Limits
+    require_limit: bool = Field(
+        default=False,
+        description=(
+            "Require SELECT queries to have a LIMIT clause. "
+            "Prevents accidentally pulling millions of rows. "
+            "Only applies to SELECT queries; INSERT/UPDATE/DELETE are unaffected. "
+            "Combine with max_limit to enforce a maximum value."
+        ),
+    )
+    max_limit: int | None = Field(
+        default=None,
+        description=(
+            "Maximum allowed LIMIT value (e.g., 1000 prevents LIMIT 10000). "
+            "Only applies to SELECT queries with a LIMIT clause. "
+            "Must be a positive integer. "
+            "If LIMIT value cannot be determined (e.g., LIMIT ALL), behavior depends on fail_safe."
+        ),
+    )
+    max_result_window: int | None = Field(
+        default=None,
+        description=(
+            "Maximum value of (LIMIT + OFFSET) for pagination control. "
+            "Prevents deep pagination attacks where large OFFSET values can "
+            "cause expensive queries. Similar to Elasticsearch's max_result_window. "
+            "Example: max_result_window=10000 allows 'LIMIT 100 OFFSET 9900' "
+            "but blocks 'LIMIT 10 OFFSET 10000'. "
+            "None (default): No limit on pagination depth. "
+            "Recommended: Set to 10000 or similar value to prevent abuse."
+        ),
+    )
+
+    # Options
+    case_sensitive: bool = Field(
+        default=False,
+        description=(
+            "Whether table/column/schema name matching is case sensitive. "
+            "False (default): 'Users' matches 'users'. "
+            "True: 'Users' does NOT match 'users'. "
+            "Applies to allowed_tables, blocked_tables, allowed_schemas, "
+            "blocked_schemas, and required_columns."
+        ),
+    )
+    dialect: Literal["postgres", "mysql", "tsql", "oracle", "sqlite"] = Field(
+        default="postgres",
+        description=(
+            "SQL dialect to use for parsing. "
+            "Affects how sqlglot interprets SQL syntax. "
+            "postgres (default): Standard SQL, case-insensitive identifiers, "
+            "quoted with \", most ANSI-compliant. "
+            "mysql: MySQL-specific syntax, case-sensitive on Unix/Linux, "
+            "backtick-quoted identifiers. "
+            "tsql: T-SQL/SQL Server, bracket-quoted identifiers [like_this], "
+            "supports CAST differently. "
+            "oracle: Oracle-specific syntax, quoted identifiers with \", "
+            "supports -- comments. "
+            "sqlite: Lightweight SQL, double-quoted identifiers, supports "
+            "AUTOINCREMENT and datetime functions. "
+            "Choose based on the target database system."
+        ),
+    )
+
+    # Query Complexity Limits (Issue #13)
+    max_subquery_depth: int | None = Field(
+        default=None,
+        description=(
+            "Maximum nesting depth for subqueries. "
+            "Prevents DoS via deeply nested queries like SELECT FROM (SELECT FROM (SELECT...)). "
+            "None (default): No limit. "
+            "Recommended: 5-10 for typical applications."
+        ),
+    )
+    max_joins: int | None = Field(
+        default=None,
+        description=(
+            "Maximum number of JOIN operations in a single query. "
+            "Prevents cartesian product attacks and expensive multi-way joins. "
+            "None (default): No limit. "
+            "Recommended: 10-20 depending on use case."
+        ),
+    )
+    max_union_count: int | None = Field(
+        default=None,
+        description=(
+            "Maximum number of UNION/UNION ALL/INTERSECT/EXCEPT operations. "
+            "Prevents DoS via massive UNION chains. "
+            "None (default): No limit. "
+            "Recommended: 10-50 depending on use case."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_config(self) -> Self:
+        """Validate configuration constraints."""
+        # Validate operation restrictions
+        if self.blocked_operations and self.allowed_operations:
+            raise ValueError(
+                "Cannot specify both blocked_operations and allowed_operations"
+            )
+
+        # Validate table restrictions
+        if self.allowed_tables and self.blocked_tables:
+            raise ValueError("Cannot specify both allowed_tables and blocked_tables")
+
+        # Validate schema restrictions
+        if self.allowed_schemas and self.blocked_schemas:
+            raise ValueError(
+                "Cannot specify both allowed_schemas and blocked_schemas"
+            )
+
+        # Validate limit controls
+        if self.max_limit is not None and self.max_limit <= 0:
+            raise ValueError("max_limit must be a positive integer")
+
+        # Validate multi-statement controls
+        if not self.allow_multi_statements and self.max_statements is not None:
+            raise ValueError(
+                "max_statements is only applicable when allow_multi_statements=True"
+            )
+
+        if self.max_statements is not None and self.max_statements <= 0:
+            raise ValueError("max_statements must be a positive integer")
+
+        # Validate column controls
+        if self.column_context and not self.required_columns:
+            warnings.warn(
+                "column_context is set but required_columns is empty - "
+                "column_context will be ignored"
+            )
+
+        # Validate LIMIT controls
+        if self.max_limit and not self.require_limit:
+            warnings.warn(
+                "max_limit is set but require_limit is False - "
+                "max_limit only enforced if LIMIT clause exists"
+            )
+
+        return self
+
+
 # =============================================================================
 # Unified Evaluator Config (used in API)
 # =============================================================================
@@ -492,10 +786,16 @@ class ControlDefinition(BaseModel):
 class EvaluatorResult(BaseModel):
     """Result from a control evaluator.
 
-    When a plugin encounters an internal error (exception, missing plugin, etc.),
-    the system fails open (matched=False) but sets the `error` field to indicate
-    the evaluation did not complete successfully. Callers should check `error`
-    to detect partial failures.
+    The `error` field indicates plugin failures, NOT validation failures:
+    - Set `error` for: plugin crashes, timeouts, missing dependencies, external service errors
+    - Do NOT set `error` for: invalid input, syntax errors, schema violations, constraint failures
+
+    When `error` is set, `matched` must be False (fail-open on plugin errors).
+    When `error` is None, `matched` reflects the actual validation result.
+
+    This distinction allows:
+    - Clients to distinguish "data violated rules" from "plugin is broken"
+    - Observability systems to monitor plugin health separately from validation outcomes
     """
 
     matched: bool = Field(..., description="Whether the pattern matched")
@@ -511,6 +811,13 @@ class EvaluatorResult(BaseModel):
             "When set, matched=False is due to error, not actual evaluation."
         ),
     )
+
+    @model_validator(mode="after")
+    def error_implies_not_matched(self) -> Self:
+        """Ensure matched=False when error is set (fail-open on errors)."""
+        if self.error is not None and self.matched:
+            raise ValueError("matched must be False when error is set")
+        return self
 
 
 class ControlMatch(BaseModel):
