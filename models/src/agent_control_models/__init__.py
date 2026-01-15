@@ -10,6 +10,7 @@ from .controls import (
     ControlSelector,
     EvaluatorConfig,
     EvaluatorResult,
+    JSONControlEvaluatorPluginConfig,
     ListConfig,
     RegexConfig,
 )
@@ -64,8 +65,9 @@ __all__ = [
     "EvaluatorConfig",
     "EvaluatorResult",
     # Plugin configs
-    "RegexConfig",
+    "JSONControlEvaluatorPluginConfig",
     "ListConfig",
+    "RegexConfig",
     # Plugin system
     "PluginEvaluator",
     "PluginMetadata",
