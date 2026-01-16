@@ -1,14 +1,15 @@
 [project]
-name = "agent-control"
+name = "agent-control-sdk"
 version = "0.1.0"
-description = "Python SDK for Agent Control - unified agent control, monitoring, and rule enforcement"
+description = "Python SDK for Agent Control - protect your AI agents with controls"
 requires-python = ">=3.12"
+# Note: agent-control-models and agent-control-engine are bundled at build time
 dependencies = [
-    "agent-control-models>=0.1.0",
-    "agent-control-engine>=0.1.0",  # For local evaluation
     "httpx>=0.26.0",
     "pydantic>=2.5.0",
     "docstring-parser>=0.15",  # For @tool decorator schema inference
+    "google-re2>=1.1",  # For engine (bundled)
+    "jsonschema>=4.0.0",  # For models/engine (bundled)
 ]
 authors = [
     {name = "Agent Control Team"}
@@ -30,9 +31,9 @@ Documentation = "https://github.com/yourusername/agent-protect#readme"
 Repository = "https://github.com/yourusername/agent-protect"
 
 [project.optional-dependencies]
-# Optional plugins - install separately as needed
+# Optional: Luna-2 plugin requires additional dependencies
 luna2 = [
-    "agent-control-plugins[luna2]",  # Galileo Luna-2 plugin
+    "httpx>=0.24.0",
 ]
 
 [dependency-groups]
@@ -48,7 +49,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agent_control"]
+# Note: agent_control_models and agent_control_engine are copied by scripts/build.py
+packages = ["src/agent_control", "src/agent_control_models", "src/agent_control_engine"]
 
 [tool.ruff]
 line-length = 100
@@ -66,7 +68,7 @@ ignore = []
 [tool.ruff.lint.isort]
 known-first-party = ["agent_control"]
 
+# For local development, use workspace packages
 [tool.uv.sources]
 agent-control-models = { workspace = true }
 agent-control-engine = { workspace = true }
-agent-control-plugins = { workspace = true }

@@ -1,11 +1,17 @@
-# Agent Protect Root Configuration
-# 
-# This project has been split into separate workspaces:
-# - sdks/ - SDK implementations workspace
-# - server/ - Server workspace
-# - models/ - Shared models package (referenced by both workspaces)
+# Agent Control Root Configuration
 #
-# To work with each component, navigate to its directory and use uv commands there.
+# This monorepo contains:
+# - models/ - Shared data models (published as agent-control-models)
+# - engine/ - Evaluation engine (bundled into SDK and server)
+# - plugins/ - Plugin implementations (bundled into server)
+# - sdks/python/ - Python SDK (published as agent-control-sdk)
+# - server/ - FastAPI server (published as agent-control-server)
+
+[project]
+name = "agent-control"
+version = "0.1.0"
+description = "Agent Control - protect your AI agents with controls"
+requires-python = ">=3.12"
 
 [tool.uv.workspace]
 members = ["models", "server", "sdks/python", "engine", "plugins"]
@@ -47,4 +53,21 @@ disallow_untyped_defs = true
 [[tool.mypy.overrides]]
 module = "re2"
 ignore_missing_imports = true
+
+# Semantic Release Configuration
+[tool.semantic_release]
+version_toml = [
+    "pyproject.toml:project.version",
+    "models/pyproject.toml:project.version",
+    "sdks/python/pyproject.toml:project.version",
+    "server/pyproject.toml:project.version",
+]
+version_source = "tag"
+commit_message = "chore(release): v{version}"
+tag_format = "v{version}"
+
+[tool.semantic_release.commit_parser_options]
+# feat = minor, fix/perf/refactor = patch, breaking (!) = major
+allowed_tags = ["feat", "fix", "perf", "chore", "docs", "style", "refactor", "test", "ci"]
+patch_tags = ["fix", "perf", "chore", "refactor"]
 
