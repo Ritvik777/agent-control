@@ -35,6 +35,7 @@ jobs:
             plugins
             ci
             infra
+            ui
           requireScope: true
           # Allow these types without scope
           ignoreTypes: |
