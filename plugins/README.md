@@ -75,13 +75,18 @@ Extend `PluginEvaluator` to create your own plugins:
 
 ```python
 from typing import Any
-from agent_control_plugins.base import PluginEvaluator, PluginMetadata
-from agent_control_models import EvaluatorResult
 from pydantic import BaseModel
+from agent_control_models import (
+    EvaluatorResult,
+    PluginEvaluator,
+    PluginMetadata,
+    register_plugin,
+)
 
 class MyConfig(BaseModel):
     threshold: float = 0.5
 
+@register_plugin
 class MyPlugin(PluginEvaluator[MyConfig]):
     metadata = PluginMetadata(
         name="my-plugin",
@@ -98,3 +103,42 @@ class MyPlugin(PluginEvaluator[MyConfig]):
             message="Evaluation complete"
         )
 ```
+
+### Entry Point Registration (Third-Party Plugins)
+
+For distributable plugins, register via Python entry points in your `pyproject.toml`:
+
+```toml
+[project.entry-points."agent_control.plugins"]
+my-plugin = "my_package.plugin:MyPlugin"
+```
+
+Plugins registered this way are automatically discovered when Agent Control starts.
+
+### Optional Dependencies with `is_available()`
+
+If your plugin has optional dependencies, override `is_available()` to check them:
+
+```python
+# Check if optional dependency is installed
+try:
+    import some_optional_lib
+    DEPS_AVAILABLE = True
+except ImportError:
+    DEPS_AVAILABLE = False
+
+@register_plugin
+class MyPlugin(PluginEvaluator[MyConfig]):
+    metadata = PluginMetadata(name="my-plugin", ...)
+    config_model = MyConfig
+
+    @classmethod
+    def is_available(cls) -> bool:
+        """Only register if dependencies are installed."""
+        return DEPS_AVAILABLE
+
+    async def evaluate(self, data: Any) -> EvaluatorResult:
+        ...
+```
+
+When `is_available()` returns `False`, the plugin is silently skipped during registration. This allows plugins with optional dependencies (like Luna-2 which requires `httpx`) to be included in the package without causing import errors.

@@ -494,11 +494,15 @@ class MyCustomPlugin(PluginEvaluator[MyPluginConfig]):
 
 ### Plugin Registration
 
-Plugins are automatically discovered when decorated with `@register_plugin`. To make your plugin available:
+Plugins are discovered automatically via Python entry points. To make your plugin available:
 
-1. **Create a Python package** with your plugin class
-2. **Add it to the plugin registry** via the decorator
-3. **Install it** in the Agent Control server environment
+1. **Create a Python package** with your plugin class decorated with `@register_plugin`
+2. **Register as an entry point** in your `pyproject.toml`:
+   ```toml
+   [project.entry-points."agent_control.plugins"]
+   my-plugin = "my_package.plugin:MyPlugin"
+   ```
+3. **Install it** in the Agent Control environment
 
 ```bash
 # Install your plugin
@@ -506,6 +510,26 @@ pip install my-custom-plugin
 
 # It's now available for use in controls
 ```
+
+### Optional Dependencies
+
+If your plugin has optional dependencies, override `is_available()`:
+
+```python
+try:
+    import optional_dep
+    AVAILABLE = True
+except ImportError:
+    AVAILABLE = False
+
+@register_plugin
+class MyPlugin(PluginEvaluator[MyConfig]):
+    @classmethod
+    def is_available(cls) -> bool:
+        return AVAILABLE
+```
+
+When `is_available()` returns `False`, the plugin is silently skipped during registration.
 
 ### Plugin Best Practices
 
