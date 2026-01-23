@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.1.2 (2026-01-23)
+
+### Chores
+
+- **infra**: Use pypi token for publish ([#72](https://github.com/rungalileo/agent-control/pull/72),
+  [`3f3ef15`](https://github.com/rungalileo/agent-control/commit/3f3ef154fd22012d38932e3a461b08ce417c4e84))
+
+
 ## v1.1.1 (2026-01-23)
 
 ### Chores
