@@ -280,6 +280,89 @@ async def handle(message: str):
     return message
 ```
 
+## SDK Logging
+
+The SDK uses Python's standard `logging` module with loggers under the `agent_control.*` namespace. Following library best practices, the SDK only adds a NullHandler - your application controls where logs go and how they're formatted.
+
+### Configuring SDK Logs in Your Application
+
+**Option 1: Standard Python logging configuration (recommended)**
+
+```python
+import logging
+
+# Basic configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
+
+# Set agent_control logs to DEBUG
+logging.getLogger('agent_control').setLevel(logging.DEBUG)
+```
+
+**Option 2: SDK settings (control log categories)**
+
+```python
+from agent_control.settings import configure_settings
+
+# Configure which categories of logs the SDK emits
+configure_settings(
+    log_enabled=True,           # Master switch for all SDK logging
+    log_span_start=True,        # Emit span start logs
+    log_span_end=True,          # Emit span end logs
+    log_control_eval=True,      # Emit control evaluation logs
+)
+```
+
+### Controlling What the SDK Logs
+
+The SDK provides behavioral settings to control which categories of logs are emitted:
+
+```python
+from agent_control.settings import configure_settings
+
+# Disable specific log categories
+configure_settings(
+    log_control_eval=False,  # Don't emit per-control evaluation logs
+    log_span_start=False,    # Don't emit span start logs
+)
+```
+
+These behavioral settings work independently of log levels:
+- **Behavioral settings**: Control which categories of logs the SDK emits
+- **Log levels**: Control which logs are displayed (via Python's logging module)
+
+### Environment Variables
+
+Configure SDK logging via environment variables:
+
+```bash
+# Behavioral settings (what to log)
+export AGENT_CONTROL_LOG_ENABLED=true
+export AGENT_CONTROL_LOG_SPAN_START=true
+export AGENT_CONTROL_LOG_SPAN_END=true
+export AGENT_CONTROL_LOG_CONTROL_EVAL=true
+```
+
+### Using SDK Loggers in Your Code
+
+If you're extending the SDK or want consistent logging:
+
+```python
+from agent_control import get_logger
+
+# Creates logger under agent_control namespace
+logger = get_logger(__name__)
+
+logger.info("Processing started")
+logger.debug("Detailed debug info")
+```
+
+**Default Settings:**
+- `log_enabled`: `true`
+- All behavioral settings: `enabled`
+
 ## Development
 
 ```bash

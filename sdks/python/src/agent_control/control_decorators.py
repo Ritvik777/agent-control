@@ -28,18 +28,22 @@ Usage:
 import asyncio
 import functools
 import inspect
-import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 from agent_control import AgentControlClient
-from agent_control.observability import log_control_evaluation, log_span_end, log_span_start
+from agent_control.observability import (
+    get_logger,
+    log_control_evaluation,
+    log_span_end,
+    log_span_start,
+)
 from agent_control.settings import get_settings
 from agent_control.tracing import _generate_span_id, get_current_trace_id, get_trace_and_span_ids
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 F = TypeVar("F", bound=Callable[..., Any])
 

@@ -36,8 +36,20 @@ import httpx
 # Configure logging to see SDK debug output
 logging.basicConfig(
     level=logging.INFO,
-    format='%(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
 )
+
+# Enable SDK logs at DEBUG level to see all control evaluations
+logging.getLogger('agent_control').setLevel(logging.DEBUG)
+
+# Suppress noisy HTTP library logs
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
+
+# Demo script logger - separate from SDK logger
+# This demonstrates that SDK logging doesn't override application logging
+logger = logging.getLogger(__name__)
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(__file__).rsplit("/", 2)[0])
@@ -54,6 +66,7 @@ async def reset_agent():
     agent_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, AGENT_ID))
     server_url = os.getenv("AGENT_CONTROL_URL", "http://localhost:8000")
 
+    logger.info(f"Resetting agent '{AGENT_ID}' (UUID: {agent_uuid})")
     print(f"Resetting agent '{AGENT_ID}' (UUID: {agent_uuid})...")
     print()
 
@@ -62,10 +75,13 @@ async def reset_agent():
         try:
             resp = await client.get(f"/api/v1/agents/{agent_uuid}")
             if resp.status_code == 404:
+                logger.info("Agent not found in database")
                 print("Agent not found - nothing to reset.")
                 return
             resp.raise_for_status()
+            logger.debug(f"Agent exists, proceeding with reset")
         except httpx.HTTPError as e:
+            logger.error(f"HTTP error checking agent: {e}")
             print(f"Error checking agent: {e}")
             return
 
@@ -73,12 +89,15 @@ async def reset_agent():
         try:
             resp = await client.delete(f"/api/v1/agents/{agent_uuid}/policy")
             if resp.status_code == 404:
+                logger.info("Agent has no policy attached")
                 print("Agent has no policy - already clean.")
             elif resp.status_code == 200:
+                logger.info("Successfully removed policy from agent")
                 print("Removed policy from agent (all controls disconnected).")
             else:
                 resp.raise_for_status()
         except httpx.HTTPError as e:
+            logger.error(f"HTTP error removing policy: {e}")
             print(f"Error removing policy: {e}")
             return
 
@@ -151,12 +170,14 @@ def print_help():
 
 async def run_interactive(agent: CustomerSupportAgent):
     """Run the interactive chat mode."""
+    logger.info("Starting interactive demo mode")
     print_header()
 
     while True:
         try:
             user_input = input("You: ").strip()
         except (KeyboardInterrupt, EOFError):
+            logger.info("User interrupted, exiting interactive mode")
             print("\nGoodbye!")
             break
 
@@ -167,6 +188,7 @@ async def run_interactive(agent: CustomerSupportAgent):
         if user_input.startswith("/"):
             command = user_input.lower().split()[0]
             args = user_input[len(command):].strip()
+            logger.debug(f"Processing command: {command}")
 
             if command in ("/quit", "/exit"):
                 print("Goodbye!")
@@ -258,6 +280,7 @@ async def run_interactive(agent: CustomerSupportAgent):
 
 async def run_safe_tests(agent: CustomerSupportAgent):
     """Run tests with safe, normal messages."""
+    logger.info("Starting safe message test suite")
     print()
     print("-" * 50)
     print("Running Safe Message Tests")
@@ -271,12 +294,14 @@ async def run_safe_tests(agent: CustomerSupportAgent):
         "Can you help me reset my password?",
     ]
 
-    for message in test_messages:
+    for i, message in enumerate(test_messages, 1):
+        logger.debug(f"Running safe test {i}/{len(test_messages)}: {message[:30]}...")
         print(f"You: {message}")
         response = await agent.chat(message)
         print(f"Agent: {response}")
         print()
 
+    logger.info(f"Completed safe message tests: {len(test_messages)} messages")
     print("-" * 50)
     print("Safe tests completed")
     print("-" * 50)
@@ -349,6 +374,7 @@ async def run_injection_tests(agent: CustomerSupportAgent):
 
 async def run_multispan_tests(agent: CustomerSupportAgent):
     """Run tests that create multiple spans per trace."""
+    logger.info("Starting multi-span trace test suite")
     print()
     print("-" * 50)
     print("Running Multi-Span Trace Tests")
@@ -359,6 +385,7 @@ async def run_multispan_tests(agent: CustomerSupportAgent):
     print()
 
     # Test 1: Comprehensive support with customer (3 spans: lookup + search + respond)
+    logger.debug("Test 1: Running 3-span flow (lookup + search + respond)")
     print("Test 1: Full flow with customer ID (3 spans)")
     print("  → lookup_customer → search_knowledge_base → respond_to_customer")
     print()
@@ -481,6 +508,7 @@ async def run_tool_control_tests(agent: CustomerSupportAgent):
 
 async def run_automated_tests(agent: CustomerSupportAgent):
     """Run all automated test scenarios."""
+    logger.info("Starting automated test suite")
     print()
     print("=" * 70)
     print("  Running Automated Test Suite")
@@ -560,13 +588,19 @@ def main():
 
     # Handle reset mode (doesn't initialize SDK)
     if args.reset:
+        logger.info("Reset mode requested")
         asyncio.run(reset_agent())
         return
 
     # Create agent instance (this triggers SDK initialization)
+    logger.info("Initializing customer support agent")
     agent = get_agent()
+    logger.info("Agent initialized successfully")
 
     # Run appropriate mode
+    mode = "automated" if (args.automated or args.mode == "automated") else "interactive"
+    logger.info(f"Starting demo in {mode} mode")
+
     if args.automated or args.mode == "automated":
         asyncio.run(run_automated_tests(agent))
     else:

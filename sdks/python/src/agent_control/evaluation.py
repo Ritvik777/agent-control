@@ -1,13 +1,13 @@
 """Evaluation check operations for Agent Control SDK."""
 
-import logging
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 from uuid import UUID
 
 from .client import AgentControlClient
+from .observability import get_logger
 
-_logger = logging.getLogger(__name__)
+_logger = get_logger(__name__)
 
 # Import models if available
 try:

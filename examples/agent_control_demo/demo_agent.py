@@ -14,8 +14,26 @@ Usage:
 """
 
 import asyncio
+import logging
 import os
 import sys
+
+# Configure logging to see SDK debug output
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
+
+# Enable SDK logs at DEBUG level to see all control evaluations
+logging.getLogger('agent_control').setLevel(logging.DEBUG)
+
+# Suppress noisy HTTP library logs
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
+
+# Demo script logger
+logger = logging.getLogger(__name__)
 
 # Add the SDK to path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../sdks/python/src"))
@@ -106,43 +124,51 @@ async def process_request(input: str) -> str:
 
 async def test_scenario(name: str, func, input_text: str):
     """Run a test scenario and show results."""
+    logger.debug(f"Running test: {name}")
     print(f"\n{'─' * 60}")
     print(f"📝 TEST: {name}")
     print(f"{'─' * 60}")
     print(f"Input: \"{input_text}\"")
     print()
-    
+
     try:
         result = await func(input_text)
+        logger.debug(f"Test '{name}' passed")
         print(f"\n✅ SUCCESS - Response returned:")
         print(f"   \"{result[:100]}{'...' if len(result) > 100 else ''}\"")
     except ControlViolationError as e:
+        logger.debug(f"Test '{name}' blocked by control: {e.control_name}")
         print(f"\n🚫 BLOCKED by control: {e.control_name}")
         print(f"   Reason: {e.message}")
         if e.metadata:
             print(f"   Metadata: {e.metadata}")
     except Exception as e:
+        logger.error(f"Test '{name}' failed with error: {e}")
         print(f"\n❌ ERROR: {e}")
 
 
 async def run_demo():
     """Run the demo scenarios."""
+    logger.info("Starting agent control demo")
     print("\n" + "=" * 60)
     print("AGENT CONTROL DEMO: Running Agent")
     print("=" * 60)
-    
+
     # Initialize the agent
     print(f"\n🤖 Initializing agent: {AGENT_NAME}")
     print(f"   Server: {SERVER_URL}")
-    
+
     try:
+        logger.info(f"Initializing agent: {AGENT_NAME}")
         agent_control.init(
             agent_name=AGENT_NAME,
             agent_id=AGENT_ID,
             server_url=SERVER_URL,
             agent_description="Demo chatbot for testing controls"
         )
+        logger.info("Agent initialized successfully")
     except Exception as e:
+        logger.error(f"Failed to initialize agent: {e}")
         print(f"\n❌ Failed to initialize agent: {e}")
         print("\nMake sure:")
         print("  1. Server is running: cd server && make run")
@@ -213,6 +239,7 @@ async def run_demo():
     )
 
     # Summary
+    logger.info("All demo scenarios completed")
     print("\n" + "=" * 60)
     print("DEMO COMPLETE!")
     print("=" * 60)

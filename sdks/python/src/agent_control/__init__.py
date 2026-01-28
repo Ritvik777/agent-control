@@ -54,6 +54,7 @@ from .observability import (
     configure_logging,
     get_event_batcher,
     get_log_config,
+    get_logger,
     init_observability,
     is_observability_enabled,
     log_control_evaluation,
@@ -68,6 +69,9 @@ from .tracing import (
     is_otel_available,
     with_trace,
 )
+
+# Module logger
+logger = get_logger(__name__)
 
 # Import models if available
 try:
@@ -277,7 +281,7 @@ def init(
         # Using DNS namespace for consistency
         import uuid
         _agent_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, agent_id)
-        print(f"ℹ️  Generated UUID5 {_agent_uuid} from agent_id '{agent_id}'")
+        logger.info("Generated UUID5 %s from agent_id '%s'", _agent_uuid, agent_id)
 
     _current_agent = Agent(
         agent_id=_agent_uuid,
@@ -302,10 +306,10 @@ def init(
                 # Check server health first
                 try:
                     health = await client.health_check()
-                    print(f"✓ Connected to Agent Control server: {_server_url}")
-                    print(f"  Server status: {health.get('status', 'unknown')}")
+                    logger.info("Connected to Agent Control server: %s", _server_url)
+                    logger.debug("Server status: %s", health.get('status', 'unknown'))
                 except Exception as e:
-                    print(f"⚠️  Server not available: {e}")
+                    logger.error("Server not available: %s", e, exc_info=True)
                     return None
 
                 # Register agent with steps
@@ -319,16 +323,16 @@ def init(
                     controls: list[dict[str, Any]] = response.get('controls', [])
 
                     if created:
-                        print(f"✓ Agent registered: {agent_name} (ID: {_agent_uuid})")
+                        logger.info("Agent registered: %s (ID: %s)", agent_name, _agent_uuid)
                     else:
-                        print(f"✓ Agent updated: {agent_name} (ID: {_agent_uuid})")
+                        logger.info("Agent updated: %s (ID: %s)", agent_name, _agent_uuid)
 
                     if steps:
-                        print(f"  Registered {len(steps)} step(s)")
+                        logger.debug("Registered %d step(s)", len(steps))
 
                     return controls
                 except Exception as e:
-                    print(f"⚠️  Failed to register agent: {e}")
+                    logger.error("Failed to register agent: %s", e, exc_info=True)
                     return None
 
         # Run registration - handle both sync and async contexts
@@ -367,15 +371,18 @@ def init(
             loop.close()
 
     except Exception as e:
-        print(f"⚠️  Could not connect to server: {e}")
-        print("   Will use local controls if available.")
+        logger.error("Could not connect to server: %s", e, exc_info=True)
+        logger.info("Will use local controls if available")
 
     # Store server controls globally for later use by @control decorator
     _server_controls = server_controls
     if server_controls:
-        print(f"✓ Loaded {len(server_controls)} control(s) from server")
+        logger.info("Loaded %d control(s) from server", len(server_controls))
     else:
-        print("ℹ️  No controls returned from server (use local controls.yaml or @control decorator)")
+        logger.debug(
+            "No controls returned from server "
+            "(use local controls.yaml or @control decorator)"
+        )
 
     # Initialize observability if enabled
     batcher = init_observability(
@@ -384,7 +391,7 @@ def init(
         enabled=observability_enabled,
     )
     if batcher:
-        print("✓ Observability enabled")
+        logger.info("Observability enabled")
 
     return _current_agent
 
@@ -899,6 +906,9 @@ __all__ = [
     # Initialization
     "init",
     "current_agent",
+
+    # SDK Logging
+    "get_logger",
 
     # Agent management
     "get_agent",

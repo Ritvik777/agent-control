@@ -86,10 +86,6 @@ class SDKSettings(BaseSettings):
         default=True,
         description="Master switch for observability logging",
     )
-    log_level: str = Field(
-        default="INFO",
-        description="Log level (DEBUG, INFO, WARNING, ERROR)",
-    )
     log_span_start: bool = Field(
         default=True,
         description="Log span start events",

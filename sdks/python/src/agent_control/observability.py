@@ -1,10 +1,22 @@
 """
 Event batching and transmission for Agent Control observability.
 
-This module provides an EventBatcher that collects control execution events
-and sends them to the server in batches for efficient transmission.
+This module provides:
+1. EventBatcher for collecting and sending control execution events to the server
+2. Standard library-compliant logging setup for the SDK
 
-Usage:
+Logging:
+    The SDK follows Python logging best practices:
+    - Uses hierarchical logger names (agent_control.*)
+    - Adds only NullHandler (no formatters or handlers)
+    - Applications control log configuration via logging.basicConfig() or handlers
+
+    Example - Configure logging in your application:
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        logging.getLogger('agent_control').setLevel(logging.DEBUG)
+
+Event Batching Usage:
     from agent_control.observability import get_event_batcher, add_event
 
     # Add an event (usually done automatically by @control decorator)
@@ -14,16 +26,17 @@ Usage:
     await shutdown_observability()
 
 Configuration (Environment Variables):
+    # Observability (event batching)
     AGENT_CONTROL_OBSERVABILITY_ENABLED: Enable observability (default: false)
     AGENT_CONTROL_BATCH_SIZE: Max events per batch (default: 100)
     AGENT_CONTROL_FLUSH_INTERVAL: Seconds between flushes (default: 10.0)
 
-    # Logging Configuration
-    AGENT_CONTROL_LOG_ENABLED: Master switch for logging (default: true)
-    AGENT_CONTROL_LOG_LEVEL: Log level - DEBUG, INFO, WARNING, ERROR (default: INFO)
-    AGENT_CONTROL_LOG_SPAN_START: Log span start events (default: true)
-    AGENT_CONTROL_LOG_SPAN_END: Log span end events (default: true)
-    AGENT_CONTROL_LOG_CONTROL_EVAL: Log per-control evaluation (default: true)
+    # SDK Logging Behavior (what logs to emit)
+    AGENT_CONTROL_LOG_ENABLED: Master switch for SDK logging (default: true)
+    AGENT_CONTROL_LOG_LEVEL: Kept for backwards compat; use logging.setLevel() instead
+    AGENT_CONTROL_LOG_SPAN_START: Emit span start logs (default: true)
+    AGENT_CONTROL_LOG_SPAN_END: Emit span end logs (default: true)
+    AGENT_CONTROL_LOG_CONTROL_EVAL: Emit per-control evaluation logs (default: true)
 """
 
 from __future__ import annotations
@@ -41,7 +54,54 @@ if TYPE_CHECKING:
     import httpx
     from agent_control_models import ControlExecutionEvent
 
-logger = logging.getLogger(__name__)
+# =============================================================================
+# Logger Setup - Standard Library Pattern
+# =============================================================================
+#
+# Following Python logging best practices for libraries:
+# - Use hierarchical logger names (agent_control.*)
+# - Add only NullHandler to suppress "No handler" warnings
+# - Let applications configure handlers, formatters, and levels
+# - Provide behavioral settings to control what the SDK logs
+#
+# Applications should configure agent_control loggers like this:
+#   import logging
+#   logging.basicConfig(level=logging.INFO)
+#   logging.getLogger('agent_control').setLevel(logging.DEBUG)
+
+_ROOT_LOGGER_NAME = "agent_control"
+
+
+def get_logger(name: str) -> logging.Logger:
+    """
+    Get a logger for a specific module under the agent_control namespace.
+
+    This follows standard library conventions - applications control logging
+    configuration (handlers, formatters, levels), while the SDK just creates
+    properly namespaced loggers.
+
+    Args:
+        name: Module name (typically __name__)
+
+    Returns:
+        Logger instance under agent_control namespace
+
+    Example:
+        logger = get_logger(__name__)
+        logger.info("Processing started")
+    """
+    if not name.startswith(_ROOT_LOGGER_NAME):
+        name = f"{_ROOT_LOGGER_NAME}.{name}"
+    return logging.getLogger(name)
+
+
+# Add NullHandler to root logger following standard library pattern
+# This suppresses "No handlers could be found" warnings while allowing
+# applications to configure logging as needed
+logging.getLogger(_ROOT_LOGGER_NAME).addHandler(logging.NullHandler())
+
+# Module logger
+logger = get_logger(__name__)
 
 # =============================================================================
 # Logging Configuration (backwards-compatible wrapper around settings)
@@ -51,14 +111,17 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LogConfig:
     """
-    Configuration for observability logging.
+    Configuration for SDK logging behavior.
 
     This class provides backwards compatibility with the original API.
     Settings are stored in the centralized SDKSettings instance.
+
+    Applications should configure log levels via Python's standard logging
+    module (e.g., logging.getLogger('agent_control').setLevel(logging.DEBUG)).
+    The fields in this class control which categories of logs the SDK emits.
     """
 
     enabled: bool = field(default_factory=lambda: get_settings().log_enabled)
-    level: str = field(default_factory=lambda: get_settings().log_level)
     span_start: bool = field(default_factory=lambda: get_settings().log_span_start)
     span_end: bool = field(default_factory=lambda: get_settings().log_span_end)
     control_eval: bool = field(default_factory=lambda: get_settings().log_control_eval)
@@ -68,7 +131,6 @@ class LogConfig:
         """Load configuration from environment variables (via settings)."""
         return cls(
             enabled=get_settings().log_enabled,
-            level=get_settings().log_level,
             span_start=get_settings().log_span_start,
             span_end=get_settings().log_span_end,
             control_eval=get_settings().log_control_eval,
@@ -79,7 +141,6 @@ class LogConfig:
         # Map old names to new setting names
         mapping = {
             "enabled": "log_enabled",
-            "level": "log_level",
             "span_start": "log_span_start",
             "span_end": "log_span_end",
             "control_eval": "log_control_eval",
@@ -87,11 +148,7 @@ class LogConfig:
         updates = {}
         for old_key, new_key in mapping.items():
             if old_key in config_dict:
-                value = config_dict[old_key]
-                if old_key == "level":
-                    value = str(value).upper()
-                else:
-                    value = bool(value)
+                value = bool(config_dict[old_key])
                 updates[new_key] = value
                 setattr(self, old_key, value)
 
@@ -105,26 +162,35 @@ _log_config = LogConfig.from_env()
 
 def configure_logging(config: dict[str, Any] | None = None) -> LogConfig:
     """
-    Configure observability logging.
+    Configure SDK logging behavior (which categories of logs to emit).
+
+    This controls which types of logs the SDK emits, not where they go or
+    what level they're logged at. For log level/handler configuration, use
+    Python's standard logging module.
 
     Can be called programmatically to override environment variable defaults.
 
     Args:
         config: Dictionary with logging options:
-            - enabled: bool - Master switch (default: True)
-            - level: str - Log level (default: "INFO")
-            - span_start: bool - Log span start (default: True)
-            - span_end: bool - Log span end (default: True)
-            - control_eval: bool - Log per-control evaluation (default: True)
+            - enabled: bool - Master switch for all SDK logging (default: True)
+            - level: str - Kept for backwards compatibility; use logging.setLevel() instead
+            - span_start: bool - Emit span start logs (default: True)
+            - span_end: bool - Emit span end logs (default: True)
+            - control_eval: bool - Emit per-control evaluation logs (default: True)
 
     Returns:
         Current LogConfig after applying changes
 
     Example:
+        # Control which SDK logs are emitted
         configure_logging({
             "enabled": True,
-            "control_eval": False,  # Disable per-control logging
+            "control_eval": False,  # Don't emit per-control logs
         })
+
+        # For log levels, use standard Python logging
+        import logging
+        logging.getLogger('agent_control').setLevel(logging.DEBUG)
     """
     global _log_config
     if config:
@@ -138,7 +204,19 @@ def get_log_config() -> LogConfig:
 
 
 def _should_log(log_type: str) -> bool:
-    """Check if a specific log type should be emitted."""
+    """
+    Check if a specific log type should be emitted by the SDK.
+
+    This controls which categories of logs the SDK emits, independent of
+    Python's logging level filtering. Applications control actual log levels
+    via logging.getLogger('agent_control').setLevel().
+
+    Args:
+        log_type: Type of log ("span_start", "span_end", "control_eval")
+
+    Returns:
+        True if this type of log should be emitted
+    """
     if not get_settings().log_enabled:
         return False
 
