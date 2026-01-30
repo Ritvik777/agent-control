@@ -1,7 +1,13 @@
 """End-to-end tests for evaluator error handling."""
+import json
 import uuid
+from copy import deepcopy
+
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from agent_control_models import EvaluationRequest, Step
+
+from .conftest import engine
 from .utils import create_and_assign_policy
 
 
@@ -182,3 +188,85 @@ def test_evaluation_engine_value_error_returns_422(client: TestClient, monkeypat
     assert resp.status_code == 422
     body = resp.json()
     assert body["error_code"] == "EVALUATION_FAILED"
+
+
+def test_evaluation_unknown_agent_returns_404(client: TestClient) -> None:
+    # Given: an agent UUID that has not been registered
+    missing_agent = uuid.uuid4()
+    payload = Step(type="llm", name="test-step", input="content", output=None)
+    req = EvaluationRequest(agent_uuid=missing_agent, step=payload, stage="pre")
+
+    # When: submitting an evaluation request
+    resp = client.post("/api/v1/evaluation", json=req.model_dump(mode="json"))
+
+    # Then: not found is returned with a clear error code
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["error_code"] == "AGENT_NOT_FOUND"
+
+
+def test_evaluation_invalid_step_name_regex_reports_error_and_allows(
+    client: TestClient,
+) -> None:
+    # Given: an agent with a control scoped by step_name_regex
+    control_name = f"control-{uuid.uuid4().hex[:8]}"
+    control_resp = client.put("/api/v1/controls", json={"name": control_name})
+    assert control_resp.status_code == 200
+    control_id = control_resp.json()["control_id"]
+
+    control_data = {
+        "description": "Step regex control",
+        "enabled": True,
+        "execution": "server",
+        "scope": {
+            "step_types": ["tool"],
+            "stages": ["pre"],
+            "step_name_regex": "^safe_.*",
+        },
+        "selector": {"path": "input"},
+        "evaluator": {"name": "regex", "config": {"pattern": ".*"}},
+        "action": {"decision": "deny"},
+    }
+    set_resp = client.put(f"/api/v1/controls/{control_id}/data", json={"data": control_data})
+    assert set_resp.status_code == 200
+
+    policy_resp = client.put("/api/v1/policies", json={"name": f"policy-{uuid.uuid4().hex[:8]}"})
+    assert policy_resp.status_code == 200
+    policy_id = policy_resp.json()["policy_id"]
+    assoc_resp = client.post(f"/api/v1/policies/{policy_id}/controls/{control_id}")
+    assert assoc_resp.status_code == 200
+
+    agent_uuid = uuid.uuid4()
+    agent_resp = client.post("/api/v1/agents/initAgent", json={
+        "agent": {"agent_id": str(agent_uuid), "agent_name": "RegexAgent"},
+        "steps": []
+    })
+    assert agent_resp.status_code == 200
+    assign_resp = client.post(f"/api/v1/agents/{str(agent_uuid)}/policy/{policy_id}")
+    assert assign_resp.status_code == 200
+
+    # And: the control data is corrupted with an invalid regex
+    corrupted_data = deepcopy(control_data)
+    corrupted_data["scope"]["step_name_regex"] = "("
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE controls SET data = CAST(:data AS JSONB) WHERE id = :id"),
+            {"data": json.dumps(corrupted_data), "id": control_id},
+        )
+
+    # When: evaluating a tool step for that agent
+    req = EvaluationRequest(
+        agent_uuid=agent_uuid,
+        step=Step(type="tool", name="safe_tool", input={}, output=None),
+        stage="pre",
+    )
+    resp = client.post("/api/v1/evaluation", json=req.model_dump(mode="json"))
+
+    # Then: evaluation succeeds but surfaces the selector error
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["is_safe"] is True
+    assert body["confidence"] == 0.0
+    assert body["errors"] is not None
+    assert body["errors"][0]["control_name"] == control_name
+    assert "Invalid step_name_regex" in body["errors"][0]["result"]["error"]

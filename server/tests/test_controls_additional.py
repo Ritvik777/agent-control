@@ -6,6 +6,9 @@ from copy import deepcopy
 
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from agent_control_server.models import Control
 
 from .conftest import engine
 from .utils import VALID_CONTROL_PAYLOAD
@@ -630,6 +633,32 @@ def test_patch_control_rename_preserves_enabled(client: TestClient) -> None:
     body = resp.json()
     assert body["name"] == new_name
     assert body["enabled"] is False
+
+
+def test_patch_control_enabled_preserves_extra_fields(client: TestClient) -> None:
+    # Given: a control with extra metadata in stored data
+    control_id, _ = _create_control(client)
+    data = deepcopy(VALID_CONTROL_PAYLOAD)
+    _set_control_data(client, control_id, data)
+
+    data_with_extra = deepcopy(data)
+    data_with_extra["custom_meta"] = {"source": "unit-test"}
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE controls SET data = CAST(:data AS JSONB) WHERE id = :id"),
+            {"data": json.dumps(data_with_extra), "id": control_id},
+        )
+
+    # When: toggling enabled via PATCH
+    resp = client.patch(f"/api/v1/controls/{control_id}", json={"enabled": False})
+
+    # Then: enabled is updated and extra fields are preserved
+    assert resp.status_code == 200
+    assert resp.json()["enabled"] is False
+    with Session(engine) as session:
+        control = session.query(Control).filter(Control.id == control_id).first()
+        assert control is not None
+        assert control.data.get("custom_meta") == {"source": "unit-test"}
 
 
 def test_patch_control_rename_with_corrupted_data_returns_enabled_none(

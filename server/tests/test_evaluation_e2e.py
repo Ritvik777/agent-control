@@ -124,6 +124,30 @@ def test_evaluation_path_failure(client: TestClient):
     assert len(data["matches"] or []) == 0
 
 
+def test_evaluation_selector_star_uses_full_step_json(client: TestClient):
+    # Given: a control with selector "*" and JSON evaluator
+    control_data = {
+        "description": "Validate full step JSON",
+        "enabled": True,
+        "execution": "server",
+        "scope": {"step_types": ["llm"], "stages": ["pre"]},
+        "selector": {"path": "*"},
+        "evaluator": {"name": "json", "config": {"required_fields": ["type"]}},
+        "action": {"decision": "deny"},
+    }
+    agent_uuid, _ = create_and_assign_policy(client, control_data, agent_name="JsonStarAgent")
+
+    # When: evaluating a valid step payload
+    payload = Step(type="llm", name="test-step", input="hello", output=None)
+    req = EvaluationRequest(agent_uuid=agent_uuid, step=payload, stage="pre")
+    resp = client.post("/api/v1/evaluation", json=req.model_dump(mode="json"))
+
+    # Then: evaluation is safe (JSON evaluator accepts the full payload)
+    assert resp.status_code == 200
+    assert resp.json()["is_safe"] is True
+    assert resp.json()["matches"] is None
+
+
 def test_evaluation_tool_step_nested(client: TestClient):
     """Test deep path selection into nested tool input."""
     # Given: A control blocking specific nested value in tool input

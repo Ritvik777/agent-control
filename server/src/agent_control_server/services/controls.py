@@ -28,7 +28,12 @@ async def list_controls_for_policy(policy_id: int, db: AsyncSession) -> list[Con
     return list(result.scalars().unique().all())
 
 
-async def list_controls_for_agent(agent_id: UUID, db: AsyncSession) -> list[APIControl]:
+async def list_controls_for_agent(
+    agent_id: UUID,
+    db: AsyncSession,
+    *,
+    allow_invalid_step_name_regex: bool = False,
+) -> list[APIControl]:
     """Return API Control models for all configured controls associated with the agent's policy.
 
     Traversal: Agent -> Policy -> Controls (direct relationship).
@@ -51,7 +56,12 @@ async def list_controls_for_agent(agent_id: UUID, db: AsyncSession) -> list[APIC
     api_controls: list[APIControl] = []
     for c in db_controls:
         try:
-            control_def = ControlDefinition.model_validate(c.data)
+            context = (
+                {"allow_invalid_step_name_regex": True}
+                if allow_invalid_step_name_regex
+                else None
+            )
+            control_def = ControlDefinition.model_validate(c.data, context=context)
             api_controls.append(APIControl(id=c.id, name=c.name, control=control_def))
         except ValidationError as e:
             error_items = []
