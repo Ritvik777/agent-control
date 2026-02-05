@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v5.1.0 (2026-02-05)
+
+### Documentation
+
+- **examples**: Update examples and docs for evaluators reorganization
+  ([#19](https://github.com/agentcontrol/agent-control/pull/19),
+  [`9cb1851`](https://github.com/agentcontrol/agent-control/commit/9cb1851c442536aeb344bdbd889629167984e7da))
+
+### Features
+
+- **sdk**: Export ControlScope, ControlMatch, and EvaluatorResult models
+  ([#18](https://github.com/agentcontrol/agent-control/pull/18),
+  [`0d49cad`](https://github.com/agentcontrol/agent-control/commit/0d49cad9da5c9e76c32d652fadbc69cec698a611))
+
+
 ## v5.0.0 (2026-02-05)
 
 ### Bug Fixes
