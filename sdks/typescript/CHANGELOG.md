@@ -1,3 +1,9 @@
+## [1.0.1](https://github.com/agentcontrol/agent-control/compare/ts-sdk-v1.0.0...ts-sdk-v1.0.1) (2026-03-04)
+
+### Bug Fixes
+
+* **ci:** disable npm provenance for private TS SDK release ([#56](https://github.com/agentcontrol/agent-control/issues/56)) ([ccb809f](https://github.com/agentcontrol/agent-control/commit/ccb809f5f0f43ae10f7cc2c76b770352c49a4377))
+
 ## 1.0.0 (2026-03-04)
 
 ### ⚠ BREAKING CHANGES
