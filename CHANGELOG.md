@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v6.6.2 (2026-03-11)
+
+### Bug Fixes
+
+- **sdk): Revert "fix(sdk**: Bundle evaluators in sdk wheel"
+  ([#90](https://github.com/agentcontrol/agent-control/pull/90),
+  [`b516ea6`](https://github.com/agentcontrol/agent-control/commit/b516ea6375257b2116dc68f5974ffd833fd0f783))
+
+
 ## v6.6.1 (2026-03-11)
 
 ### Bug Fixes
