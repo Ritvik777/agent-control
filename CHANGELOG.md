@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v6.7.2 (2026-03-12)
+
+### Bug Fixes
+
+- **sdk**: Fail closed on post-hook evaluation errors
+  ([#114](https://github.com/agentcontrol/agent-control/pull/114),
+  [`67f8fc1`](https://github.com/agentcontrol/agent-control/commit/67f8fc1a3dd81d7516f8961a2af7372bfd137681))
+
+
 ## v6.7.1 (2026-03-11)
 
 ### Bug Fixes
